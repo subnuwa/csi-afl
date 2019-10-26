@@ -27,7 +27,9 @@ export PATH=$PATH:$CSI_AFL_PATH
 ```
 
 Instrument a binary
+
 `./CSIDyninst -i ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpinst -B ../outputs/tcpdir -O`
 
 Re-instrument the binary
+
 `./CSIReinst -i ../outputs/tcpinst -R ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpre -B ../outputs/tcpdir -E ../outputs/tcpdir/ -O`
