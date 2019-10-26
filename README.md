@@ -13,9 +13,13 @@ cd ../..
 
 ``` 
 
-`git clone https://github.com/RosenZhu/csi-afl.git`
+download csi-afl
+```
+git clone https://github.com/RosenZhu/csi-afl.git
 
-`cd csi-afl`
+cd csi-afl
+```
+
 Change the `DYN_ROOT` in Makefile to /path/to/your/dyninst/build/
 
 `make clean && make all`
