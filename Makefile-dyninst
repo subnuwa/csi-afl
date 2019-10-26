@@ -1,0 +1,46 @@
+DYNINST_ROOT = /home/nsc2s/Apps/buildDyn10
+AFL_ROOT = /home/nsc2s/Experiments/rosen/combine/afl
+DYNINST_INCLUDE = $(DYNINST_ROOT)/include
+DYNINST_LIB =  $(DYNINST_ROOT)/lib
+# These should point to where libelf and libdwarf are installed
+LOCAL_INC_DIR = /usr/local/include
+LOCAL_LIBS_DIR = /usr/local/lib
+TBB_INC_DIR = $(DYNINST_ROOT)/tbb/include
+#TBB_LIBS_DIR = $(DYNINST_ROOT)/tbb/lib
+#LOCAL_INC_DIR = /home/nsc2s/Apps/buildDyn10
+#LOCAL_LIBS_DIR = /home/nsc2s/Apps/buildDyn10
+
+# 
+CXX = g++
+CXXFLAGS = -g -Wall -O3 -std=c++11
+LIBFLAGS = -fpic -shared
+
+CC = gcc
+CFLAGS = -Wall -pedantic -g -std=gnu99
+
+
+all: CofreeDyninst libCofreeDyninst.so
+#-L$(TBB_LIBS_DIR)
+# -lboost_system 
+# -lboost_filesystem
+# -linstructionAPI
+# -ldyninstAPI
+CofreeDyninst: CofreeDyninst.o
+	$(CXX) $(CXXFLAGS) -L$(DYNINST_LIB) \
+		-L$(LOCAL_LIBS_DIR) \
+		-o CofreeDyninst CofreeDyninst.o \
+		-lcommon \
+		-liberty \
+		-ldyninstAPI \
+		-linstructionAPI \
+		-lboost_system \
+		-lstdc++fs
+
+libCofreeDyninst.so: libCofreeDyninst.cpp
+	$(CXX) $(CXXFLAGS) $(LIBFLAGS) -I$(AFL_ROOT) libCofreeDyninst.cpp -o libCofreeDyninst.so -lstdc++fs
+
+CofreeDyninst.o: CofreeDyninst.cpp
+	$(CXX) $(CXXFLAGS) -I$(LOCAL_INC_DIR) -I$(DYNINST_INCLUDE) -I$(TBB_INC_DIR)  -c CofreeDyninst.cpp
+
+clean:
+	rm -f CofreeDyninst *.so *.o 
