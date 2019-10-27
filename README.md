@@ -2,7 +2,7 @@
 fuzzing with path sensitive instrumentation.
 
 ## How to use csi-afl
-downloads the target binaries
+downloads the target binaries:
 ```
 mkdir outputs
 cd outputs
@@ -13,10 +13,9 @@ cd ../..
 
 ``` 
 
-download csi-afl
+download csi-afl:
 ```
 git clone https://github.com/RosenZhu/csi-afl.git
-
 cd csi-afl
 ```
 
@@ -30,10 +29,12 @@ export CSI_AFL_PATH=/path/to/csi-afl/
 export PATH=$PATH:$CSI_AFL_PATH
 ```
 
-Instrument a binary
+run csi-afl:
 
-`./CSIDyninst -i ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpinst -B ../outputs/tcpdir -O`
+`./csi-afl -i ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/seed_dir/ -o ../outputs/tcptest -t 500 -- ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -nr @@`
 
-Re-instrument the binary
+This will manifest the problem.
 
-`./CSIReinst -i ../outputs/tcpinst -R ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpre -B ../outputs/tcpdir -E ../outputs/tcpdir/ -O`
+When using the CSIReinst seperately, the problem doesn't show:
+
+`./CSIReinst -i ../outputs/tcptest/CSI/tcpdump.oracle_old -R ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcptest/CSI/tcpdump.oracle -B ../outputs/tcptest/CSI/tcpdump_oracle_addr/ -E ../outputs/tcptest/CSI/tcpdump_tracer_addr/ -O`

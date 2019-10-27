@@ -106,11 +106,12 @@
 [INSTALL]
 install dyninst-rerewrite:
 https://github.com/mxz297/dyninst/tree/rerewriting
-$ mkdir */buildDyn101
-$ cd buildDyn101
+
 $ git clone https://github.com/mxz297/dyninst.git
 $ cd dyninst
 $ git checkout rerewriting
+$ mkdir */buildDyn101
+$ cd buildDyn101
 
 Configure Dyninst with CMake
 $ cmake /path/to/dyninst/source -DCMAKE_INSTALL_PREFIX=/path/to/installation
@@ -280,3 +281,10 @@ count_injmp=0, count_incall=0, count_uncond = 0, count_nojump=0, count_inret;
 3. add time for instrumentation
     csi-afl.c: inst_time
 
+Instrument a binary
+
+`./CSIDyninst -i ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpinst -B ../outputs/tcpdir -O`
+
+Re-instrument the binary
+
+`./CSIReinst -i ../outputs/tcpinst -R ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpre -B ../outputs/tcpdir -E ../outputs/tcpdir/ -O`
