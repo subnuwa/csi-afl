@@ -87,7 +87,7 @@ BPatch_function *clearMaps;
 
 
 
-const char *instLibrary = "./libCSIReinst.so";
+const char *instLibrary = "./libCSIDyninst.so";//"./libCSIReinst.so";
 
 static const char *OPT_STR = "i:R:o:l:vB:E:r:CTOM";
 static const char *USAGE = " -i <binary> -R <binary> -o <binary> -l <library> -B <out-dir> -E <tracer-dir> -O\n \

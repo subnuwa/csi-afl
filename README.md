@@ -29,12 +29,14 @@ export CSI_AFL_PATH=/path/to/csi-afl/
 export PATH=$PATH:$CSI_AFL_PATH
 ```
 
-run csi-afl:
+run csi-afl to test readelf:
 
-`./csi-afl -i ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/seed_dir/ -o ../outputs/tcptest -t 500 -- ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -nr @@`
+`./csi-afl -i ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/seed_dir/ -o ../outputs/readtest -t 500 -- ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -a @@`
+
+
 
 This will manifest the problem.
 
-When using the CSIReinst seperately, the problem doesn't show:
+Then using the CSIReinst seperately, the problem doesn't show:
 
-`./CSIReinst -i ../outputs/tcptest/CSI/tcpdump.oracle_old -R ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcptest/CSI/tcpdump.oracle -B ../outputs/tcptest/CSI/tcpdump_oracle_addr/ -E ../outputs/tcptest/CSI/tcpdump_tracer_addr/ -O`
+`./CSIReinst -i ../outputs/readtest/CSI/readelf.oracle_old  -R ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -o ../outputs/readtest/CSI/readelf.oracle.new -B ../outputs/readtest/CSI/readelf_oracle_addr/ -E ../outputs/readtest/CSI/readelf_tracer_addr/ -O`
