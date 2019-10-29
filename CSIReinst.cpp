@@ -927,33 +927,35 @@ bool insertBBCallback(BPatch_binaryEdit * appBin, BPatch_image *appImage, vector
     // special instrumentation for function main
     if (string(funcName) == string("main")) {
             //insert function initAflForkServer at the entry of main
-        BPatch_function *funcToPatch = NULL;
-        BPatch_Vector<BPatch_function*> funcs;
+        // BPatch_function *funcToPatch = NULL;
+        // BPatch_Vector<BPatch_function*> funcs;
         
-        appImage->findFunction("main",funcs);
-        if(!funcs.size()) {
-            cerr << "Couldn't locate main, check your binary. "<< endl;
-            return EXIT_FAILURE;
-        }
-        // there should really be only one
-        funcToPatch = funcs[0];
+        // appImage->findFunction("main",funcs);
+        // if(!funcs.size()) {
+        //     cerr << "Couldn't locate main, check your binary. "<< endl;
+        //     return EXIT_FAILURE;
+        // }
+        // // there should really be only one
+        // funcToPatch = funcs[0];
     
-        if(!funcToPatch) {
-            cerr << "Couldn't locate function at given entry point. "<< endl;
-            return EXIT_FAILURE;
-        }
+        // if(!funcToPatch) {
+        //     cerr << "Couldn't locate function at given entry point. "<< endl;
+        //     return EXIT_FAILURE;
+        // }
+
+        //comment for test--rosen
         // insert forkserver
-        if(!insertCallToMainEE (appBin,  initAflForkServer, funcToPatch)){
-            cerr << "Could not insert init callback at main." << endl;
-            return EXIT_FAILURE;
-        }
+        // if(!insertCallToMainEE (appBin,  initAflForkServer, curFunc)){
+        //     cerr << "Could not insert forkserver at main." << endl;
+        //     return EXIT_FAILURE;
+        // }
         // insert function to get initial addresses
-        if(!insertAddrsToInit (appBin,  getIndAddrs, funcToPatch, out_dir)){
+        if(!insertAddrsToInit (appBin,  getIndAddrs, curFunc, out_dir)){
             cerr << "Could not insert init callback at main." << endl;
             return EXIT_FAILURE;
         }
         // at the end of main function, insert function to clear multimaps
-        if(!insertCallToMainExit (appBin,  clearMaps, funcToPatch)){
+        if(!insertCallToMainExit (appBin,  clearMaps, curFunc)){
             cerr << "Could not insert main exit callback at main." << endl;
             return EXIT_FAILURE;
         }

@@ -29,18 +29,29 @@ export CSI_AFL_PATH=/path/to/csi-afl/
 export PATH=$PATH:$CSI_AFL_PATH
 ```
 
-run csi-afl to test readelf:
+Instrument oracle:
+`mkdir ../ouputs/readtest`
 
 ```
-./csi-afl -i ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/seed_dir/ -o ../outputs/readtest -t 500 -- ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -a @@
+./CSIDyninst -i ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -o ../outputs/readtest/read.oracle -B ../outputs/readtest/oracle_addr_dir -O
 ```
-
-
-
-This will manifest the problem.
-
-Then using the CSIReinst seperately, the problem doesn't show:
-
+Instrument tracer:
 ```
-./CSIReinst -i ../outputs/readtest/CSI/readelf.oracle_old  -R ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -o ../outputs/readtest/CSI/readelf.oracle.new -B ../outputs/readtest/CSI/readelf_oracle_addr/ -E ../outputs/readtest/CSI/readelf_tracer_addr/ -O
+./CSIDyninst -i ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -o ../outputs/readtest/read.tracer -B ../outputs/readtest/tracer_addr_dir -T
 ```
+run tracer:
+```
+../outputs/readtest/read.tracer -a ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/seed_dir/small_exec.elf
+```
+it's no problem.
+
+re-instrument oracle:
+```
+./CSIReinst -i ../outputs/readtest/read.oracle -R ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -o ../outputs/readtest/read.oracle.new -B ../outputs/readtest/oracle_addr_dir/ -E ../outputs/readtest/tracer_addr_dir/ -O
+```
+run oracle.new:
+```
+../outputs/readtest/read.oracle.new -a ../target-bins/untracer_bins/binutils/seed_dir/small_exec.elf
+```
+segment fault.
+

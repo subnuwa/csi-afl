@@ -1031,10 +1031,12 @@ int main (int argc, char **argv)
         return 0;
     }
 
-    if(!insertCallToMainEE (appBin,  initAflForkServer, funcToPatch)){
-        cerr << "Could not insert init callback at main." << endl;
-        return EXIT_FAILURE;
-    }
+    //comment for test--rosen
+    // if(!insertCallToMainEE (appBin,  initAflForkServer, funcToPatch)){
+    //     cerr << "Could not insert init callback at main." << endl;
+    //     return EXIT_FAILURE;
+    // }
+
     if(!insertAddrsToInit (appBin,  getIndAddrs, funcToPatch, out_dir)){
         cerr << "Could not insert init callback at main." << endl;
         return EXIT_FAILURE;

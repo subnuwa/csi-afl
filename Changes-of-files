@@ -110,11 +110,13 @@ https://github.com/mxz297/dyninst/tree/rerewriting
 $ git clone https://github.com/mxz297/dyninst.git
 $ cd dyninst
 $ git checkout rerewriting
+$ cd ..
 $ mkdir */buildDyn101
 $ cd buildDyn101
 
 Configure Dyninst with CMake
 $ cmake /path/to/dyninst/source -DCMAKE_INSTALL_PREFIX=/path/to/installation
+cmake /downloads/dyninst/ -DCMAKE_INSTALL_PREFIX=/apps/buildDyn101/
 
 NOTE: If Dyninst builds TBB from source, see the wiki for instructions on ensuring correct usage.
 
@@ -283,8 +285,30 @@ count_injmp=0, count_incall=0, count_uncond = 0, count_nojump=0, count_inret;
 
 Instrument a binary
 
-`./CSIDyninst -i ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpinst -B ../outputs/tcpdir -O`
+`./CSIDyninst -i ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpinst -B 
+../outputs/tcpdir -O`
 
 Re-instrument the binary
 
-`./CSIReinst -i ../outputs/tcpinst -R ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpre -B ../outputs/tcpdir -E ../outputs/tcpdir/ -O`
+`./CSIReinst -i ../outputs/tcpinst -R ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o 
+../outputs/tcpre -B ../outputs/tcpdir -E ../outputs/tcpdir/ -O`
+
+run csi-afl to test readelf:
+
+```
+./csi-afl -i ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/seed_dir/ -o 
+../outputs/readtest -t 500 -- ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -a @@
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
