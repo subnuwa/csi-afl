@@ -30,6 +30,7 @@ export PATH=$PATH:$CSI_AFL_PATH
 ```
 
 Instrument oracle:
+
 `mkdir ../ouputs/readtest`
 
 ```
