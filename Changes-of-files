@@ -114,9 +114,14 @@ $ cd ..
 $ mkdir */buildDyn101
 $ cd buildDyn101
 
+revert a commit
+$ git log
+copy a commit hash (the second hash)
+$ git reset --hard <hash>
+
 Configure Dyninst with CMake
-$ cmake /path/to/dyninst/source -DCMAKE_INSTALL_PREFIX=/path/to/installation
-cmake /downloads/dyninst/ -DCMAKE_INSTALL_PREFIX=/apps/buildDyn101/
+cmake /path/to/dyninst/source -DCMAKE_INSTALL_PREFIX=/path/to/installation
+$ cmake /downloads/dyninst/ -DCMAKE_INSTALL_PREFIX=/apps/buildDyn101/
 
 NOTE: If Dyninst builds TBB from source, see the wiki for instructions on ensuring correct usage.
 
@@ -282,6 +287,10 @@ count_injmp=0, count_incall=0, count_uncond = 0, count_nojump=0, count_inret;
 
 3. add time for instrumentation
     csi-afl.c: inst_time
+
+4. comment for test:
+    CSIDyninst.cpp:1034
+    CSIReinst.cpp:946
 
 Instrument a binary
 

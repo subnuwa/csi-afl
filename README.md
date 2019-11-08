@@ -48,7 +48,7 @@ it's no problem.
 
 re-instrument oracle:
 ```
-./CSIReinst -i ../outputs/readtest/read.oracle -R ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -o ../outputs/readtest/read.oracle.new -B ../outputs/readtest/oracle_addr_dir/ -E ../outputs/readtest/tracer_addr_dir/ -O
+./CSIReinst -i ../outputs/readtest/read.oracle -R ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -o ../outputs/readtest/read.oracle.new -B ../outputs/readtest/oracle_addr_dir -E ../outputs/readtest/tracer_addr_dir -O
 ```
 run oracle.new:
 ```
