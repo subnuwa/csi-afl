@@ -9,6 +9,7 @@
 git clone https://github.com/mxz297/dyninst.git
 cd dyninst
 git checkout rerewriting
+git reset --hard 5ebf1c887c712201f4df56cabde6596f2801745c
 ```
 [install instructions](https://github.com/mxz297/dyninst/tree/rerewriting)
 
