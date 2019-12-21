@@ -29,3 +29,8 @@ make clean && make all
 ```
 export PATH=$PATH:/path/to/your/csi-afl
 ```
+
+4. run fuzzing
+```
+./csi-afl -i /path/to/seed/dir -o /path/to/result/dir -t 500 -- /path/to/target/bin [bin parameters]
+```
