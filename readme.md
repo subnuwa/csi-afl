@@ -10,7 +10,7 @@ git clone https://github.com/mxz297/dyninst.git
 cd dyninst
 git checkout rerewriting
 ```
-[install instructions]((https://github.com/mxz297/dyninst/tree/rerewriting))
+[install instructions](https://github.com/mxz297/dyninst/tree/rerewriting)
 
 
 ## Install csi-afl
