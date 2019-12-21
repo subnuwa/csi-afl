@@ -1,0 +1,158 @@
+### 
+    #the environment PATH should include this directory, 
+    #because the instrumented binary needs the shared library libCofreeDyninst.so 
+###
+
+### three binaries:
+    # 1. oracle: to test the new branch
+        ** record addresses
+        ** exit on new branch 
+        ** only oracle does the mark things: wirte marks to file and shared memory
+    # 2. tracer: record the address reached by an input
+        ** record addresses
+        ** don't exit on new branch
+        ** only tracer write the edge addrs
+            1) be used for tracing ,calibrate_case();
+            2) when tracer reach a branch, it doesn't exit but only write down the addresses
+            3) remove record addresses before run tracer
+    # 3. crash: check for unique crash;
+        ** don'trecord addresses
+        ** exit on new branch
+        ** only crasher stop at new crasher
+        ** the addresses having been reached are from tracer
+            1) add addresses from tracer results
+    # 4. trimmer: for the stage of trimming
+        ** don't record addresses
+        ** don't exit on new branch
+        ** only trimmer update the bitmap
+        ** trimming is only used for saving cycles when doing deterministic checks
+    ## dry_run--calibrate_case()--run_target(tracer)
+    ## sync_fuzzers: run(tracer)
+    ## fuzz_one()--trim_case()--run(tracer)
+    ## fuzz_one()--common_fuzz_stuff()--run(oracle)
+    ## common_fuzz_stuff()--save_if_interesting()--run(tracer)--stop(oracle)
+            --stop(tracer)--instrument(oracle)--copy oracle to tracer
+            --start(oracle)--start(tracer)
+###
+
+1. remove all "oracle_path"
+    we don't need oracle to rewrite;
+    we use "target_path" to re-instrument.
+
+    1) void setup_oracle(u8 * path_to_oracle)
+
+2. remove "blocks_seen"
+
+3. change the words on the banner: show_stats()
+
+4. add "remove_init_addrs()": remove addresses created by dry run
+
+5. every time, calibrate() and trim_case() run, the recorded addresses files will duplicate the contents
+    set oracle and tracer: oracle test the new branch; trimmer runs in trim_case()...
+
+6. if oracle meets a crash and the crasher binary regard it as a unique crash, 
+        the crasher binary has to be re-instrumented until it meets a crash with the same input
+
+7. [Question] The first time forkserver starts up, the target binary will run through. 
+    What are the inputs? Will no inputs cause fuzzing into wrong state?
+    [A:] When forkserver starts up, it'll wait before executing fork();
+            the standard input is filled by inputs (out_dir/.cur_inputs or out_file).
+
+8. queue->exec_cksum: different inputs may have the same cksum
+
+9. Unique Crash: 
+    When crash happens, has_new_bits() help decide whether it's a new crash
+        n=getchar(); 
+        while(i< n){ func(i); }  // if i=50, func(i) is a bug
+
+10. The return type of indirect branch (Dyninst::InstructionAPI::c_ReturnInsn) cannot be controlled by inputs,
+    otherwise, it's a bug.
+
+11. insert forkserver after getting addresses, thus the code about getting addresses will be executed only once.
+
+12. don't instrument addresses before main (remove addresses before function main())
+
+13. type of branches:
+    # conditional jump: taken, not taken
+        *A 'CondJumpTaken' edge is found after a conditional branch, 
+        along the edge that is taken when the condition is true. 
+        *A 'CondJumpNottaken' edge follows the path when the condition is not taken. 
+    # indirect branch: indirect call, indirect jump, indirect return
+    # uncontional jump: 'UncondJump' is used along an edge that flows out of an unconditional branch that is always taken. 
+    # No jump: 'NonJump' is an edge that flows out of a basic block that does not end in a jump, but falls through into the next basic block.
+14. trimmer doesn't need other instrumentations-rosen
+        if(isTrimmer) return true;
+**DON'T NEED TRIMMER
+15. 1) oracle will be instrumented repeatedly, which means the hash of edges will be changed 
+    every time after it's instrumented. 
+    2) so oracle is not inserted the hash function.
+    3) trimmer and tracer are instrumented only once, so the hash for each is fixed.
+
+16. Path marks include marks in paths which will cause time out.
+
+
+
+
+[INSTALL]
+change the 'Dyn_ROOT' in Makefile
+$ make clean && make all
+
+[ENV]
+
+export PATH=$PATH:/apps/csi-afl
+
+#export DYNINST_INSTALL=/home/nsc2s/apps/buildDyn10.1
+
+
+
+[RUN]
+chang to root
+$ sudo su
+$ echo core >/proc/sys/kernel/core_pattern
+$ cd /sys/devices/system/cpu
+$ echo performance | tee cpu*/cpufreq/scaling_governor
+change back to user
+$ exit (or press ctrl+D)
+
+
+1. audiofile/sfconvert: 
+afl-fuzz-saveinputs -i seed_dir -o out_dir -t 500 -- ./audiofile-0.2.7/sfcommands/sfconvert @@ out.mp3 format aiff
+
+2. binutils/readelf
+afl-fuzz-saveinputs -i seed_dir -o out_dir -t 500 -Q -- ./binutils-2.30/binutils/readelf -a @@
+
+3. cjson/cjson
+afl-fuzz-saveinputs -i seed_dir -o out_dir -x json.dict -t 500 -Q -- ./cjson-1.7.7/fuzzing/cjson @@
+
+4. libarchive/bsdtar
+afl-fuzz-saveinputs -i seed_dir -o out_dir -t 500 -Q -- ./libarchive-3.3.2/bsdtar -O -xf @@
+
+5. libjpeg/djpeg
+afl-fuzz-saveinputs -i seed_dir -o out_dir -t 500 -Q -- ./jpeg-9c/djpeg @@
+
+6.libksba/cert-basic
+afl-fuzz-saveinputs -i seed_dir -o out_dir -t 500 -Q -- ./libksba-1.3.5/tests/cert-basic @@
+
+7. poppler/pdftohtml
+afl-fuzz-saveinputs -i seed_dir -x pdf.dict -o out_dir -t 500 -Q -- ./poppler-0.22.5/utils/pdftohtml @@
+
+8. tcpdump/tcpdump
+afl-fuzz-saveinputs -i seed_dir -o out_dir -t 500 -Q -- ./tcpdump-4.9.2/tcpdump -nr @@
+
+9. lava/base64
+afl-fuzz -i seed_dir -o out_dir -t 500 -Q -- ./lava_bins/base64 -d @@
+
+10. lava/md5sum
+afl-fuzz -i seed_dir -o out_dir -t 500 -Q -- ./lava_bins/md5sum @@
+
+11. lava/uniq
+afl-fuzz -i seed_dir -o out_dir -t 500 -Q -- ./lava_bins/uniq
+
+9. lava/who
+afl-fuzz -i seed_dir -o out_dir -t 500 -Q -- ./lava_bins/who @@
+
+
+
+
+
+
