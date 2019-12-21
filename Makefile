@@ -52,7 +52,7 @@ MISC_PATH   = $(PREFIX)/share/afl
 
 # PROGS intentionally omit untracer-as, which gets installed elsewhere.
 
-PROGS       = csi-afl libCSIDyninst CSIDyninst libCSIReinst CSIReinst afl-showmap
+PROGS       = csi-afl libCSIDyninst CSIDyninst afl-showmap
 SH_PROGS    = afl-plot
 
 CFLAGS     ?= -O3 -funroll-loops
@@ -95,11 +95,7 @@ libCSIDyninst: libCSIDyninst.cpp
 CSIDyninst: CSIDyninst.cpp
 	$(CXX) -Wl,-rpath-link,$(DYN_ROOT)/lib -Wl,-rpath-link,$(DYN_ROOT)/include $(CXXFLAGS) -o CSIDyninst CSIDyninst.cpp $(LDFLAGS)
 
-libCSIReinst: libCSIReinst.cpp
-	$(CXX) $(CXXFLAGS) -o libCSIReinst.so libCSIReinst.cpp $(LDFLAGS) $(LIBFLAGS)
 
-CSIReinst: CSIReinst.cpp
-	$(CXX) -Wl,-rpath-link,$(DYN_ROOT)/lib -Wl,-rpath-link,$(DYN_ROOT)/include $(CXXFLAGS) -o CSIReinst CSIReinst.cpp $(LDFLAGS)
 
 afl-showmap: afl-showmap.c $(COMM_HDR) | test_x86
 	$(CC) $(CFLAGS) $@.c -o $@ $(LDFLAGS)

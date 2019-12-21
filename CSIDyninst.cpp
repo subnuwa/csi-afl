@@ -1,9 +1,3 @@
-/*
-Instrument the original binary.
-The output binary has the full instrumentation.
-
-*/
-
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
@@ -982,7 +976,7 @@ int main (int argc, char **argv)
 
     if (!initAflForkServer || !ConditionJump || !IndirectBranch || !ConditionMark
         || !getIndAddrs || !clearMaps || !BBCallback || !atMainExit) {
-        cerr << "CSIDyninst instrumentation library lacks callbacks!" << endl;
+        cerr << "Instrumentation library lacks callbacks!" << endl;
         return EXIT_FAILURE;
     }
 
@@ -1031,12 +1025,10 @@ int main (int argc, char **argv)
         return 0;
     }
 
-    //comment for test--rosen
-    // if(!insertCallToMainEE (appBin,  initAflForkServer, funcToPatch)){
-    //     cerr << "Could not insert init callback at main." << endl;
-    //     return EXIT_FAILURE;
-    // }
-
+    if(!insertCallToMainEE (appBin,  initAflForkServer, funcToPatch)){
+        cerr << "Could not insert init callback at main." << endl;
+        return EXIT_FAILURE;
+    }
     if(!insertAddrsToInit (appBin,  getIndAddrs, funcToPatch, out_dir)){
         cerr << "Could not insert init callback at main." << endl;
         return EXIT_FAILURE;

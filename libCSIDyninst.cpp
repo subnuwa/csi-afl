@@ -29,11 +29,11 @@ static u8* trace_bits;
 static s32 shm_id;                    /* ID of the SHM region             */
 static unsigned short prev_id;
 //examined branches
-multimap <unsigned long, unsigned long> lindcall_addrs;
-multimap <unsigned long, unsigned long> lindjump_addrs;
+multimap <unsigned long, unsigned long> indcall_addrs;
+multimap <unsigned long, unsigned long> indjump_addrs;
 // marked branches
-multimap <unsigned long, unsigned long> mark_lindcall_addrs;
-multimap <unsigned long, unsigned long> mark_lindjump_addrs;
+multimap <unsigned long, unsigned long> mark_indcall_addrs;
+multimap <unsigned long, unsigned long> mark_indjump_addrs;
 
 /* This is for the dummy tracer - i.e., it exits when hitting <main>. */
 void atMainExit() {
@@ -133,7 +133,7 @@ void getIndirectAddrs(char* base_dir){
     ifstream indcall_io (indCall_path.c_str());
     if (indcall_io.is_open()){
         while(indcall_io >> src >> des){
-            lindcall_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
+            indcall_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
         }
         indcall_io.close();
     }
@@ -142,7 +142,7 @@ void getIndirectAddrs(char* base_dir){
     ifstream indjump_io (indJump_path.c_str());
     if (indjump_io.is_open()){
         while(indjump_io >> src >> des){
-            lindjump_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
+            indjump_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
         }
         indjump_io.close();
     }
@@ -157,7 +157,7 @@ void getIndirectAddrs(char* base_dir){
     ifstream mark_indcall_io (mark_indCall_path.c_str());
     if (mark_indcall_io.is_open()){
         while(mark_indcall_io >> src >> des){
-            mark_lindcall_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
+            mark_indcall_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
         }
         mark_indcall_io.close();
     }
@@ -166,7 +166,7 @@ void getIndirectAddrs(char* base_dir){
     ifstream mark_indjump_io (mark_indJump_path.c_str());
     if (mark_indjump_io.is_open()){
         while(mark_indjump_io >> src >> des){
-            mark_lindjump_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
+            mark_indjump_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
         }
         mark_indjump_io.close();
     }
@@ -175,10 +175,10 @@ void getIndirectAddrs(char* base_dir){
 
 /* clear multimap at the end*/
 void clearMultimaps(void){
-    lindcall_addrs.clear();
-    lindjump_addrs.clear();
-    mark_lindcall_addrs.clear();
-    mark_lindjump_addrs.clear();
+    indcall_addrs.clear();
+    indjump_addrs.clear();
+    mark_indcall_addrs.clear();
+    mark_indjump_addrs.clear();
 }
 
 //indirect branches (call/jump)
@@ -213,15 +213,15 @@ void IndirectBranch(unsigned long src_offset, unsigned long des_offset, const ch
     int msize =0;
     bool new_flag= true;
     multimap <unsigned long, unsigned long> ind_tmp;
-    if (indi==TYPE_CALL) ind_tmp = lindcall_addrs;
-    else ind_tmp = lindjump_addrs;
+    if (indi==TYPE_CALL) ind_tmp = indcall_addrs;
+    else ind_tmp = indjump_addrs;
 
         // for path marks, if the edge has been recorded, write to shared memory
     if (isoracle){
         bool mark_flag= false;
         multimap <unsigned long, unsigned long> mark_tmp;
-        if (indi==TYPE_CALL) mark_tmp = mark_lindcall_addrs;
-        else mark_tmp = mark_lindjump_addrs;
+        if (indi==TYPE_CALL) mark_tmp = mark_indcall_addrs;
+        else mark_tmp = mark_indjump_addrs;
         msize = 0;
         if (!mark_tmp.empty()){
             msize = mark_tmp.count(src_offset);
@@ -281,7 +281,7 @@ void IndirectBranch(unsigned long src_offset, unsigned long des_offset, const ch
 
         }
 
-        //for path mark, write to record seed when a new edge is met
+        //for path mark, write to record file when a new edge is met
         if(isoracle){
             ofstream markaddrs;
             markaddrs.open (mark_path, ios::out | ios::app | ios::binary); //write file

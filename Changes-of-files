@@ -1,6 +1,6 @@
 ### 
     #the environment PATH should include this directory, 
-    #because the instrumented binary needs the shared library libCSIDyninst.so 
+    #because the instrumented binary needs the shared library libCofreeDyninst.so 
 ###
 
 ### three binaries:
@@ -91,61 +91,19 @@
 16. Path marks include marks in paths which will cause time out.
 
 
-[TODO] 
-    1) cannot find function main
-       [DONE] use appImage to get functions, all instrumentable functions will be included.
-    2) tracer doesn't work at all!!!
-        [reason]: maybe the standard input should be set every time before run_target();
-                    the standard input is a stream, whose file pointer will move every time a byte is read.
-        [DONE]: it has to reset the input file (write_to_testcase()) every time before executing run_target().
-    3) [DONE] the forkserver of trimmer can be started when needed
-    4) [DONE] about the shared library
-    5) change the names on banner:
-            a. "no new bits (discarded)": it's actually the path collisions from afl, but detected by CSI
+
 
 [INSTALL]
-install dyninst-rerewrite:
-https://github.com/mxz297/dyninst/tree/rerewriting
-
-$ git clone https://github.com/mxz297/dyninst.git
-$ cd dyninst
-$ git checkout rerewriting
-$ cd ..
-$ mkdir */buildDyn101
-$ cd buildDyn101
-
-revert a commit
-$ git log
-copy a commit hash (the second hash)
-$ git reset --hard <hash>
-
-Configure Dyninst with CMake
-cmake /path/to/dyninst/source -DCMAKE_INSTALL_PREFIX=/path/to/installation
-$ cmake /downloads/dyninst/ -DCMAKE_INSTALL_PREFIX=/apps/buildDyn101/
-
-NOTE: If Dyninst builds TBB from source, see the wiki for instructions on ensuring correct usage.
-
-Build and install Dyninst in parallel
-
-$ make install -jN
-
-
 change the 'Dyn_ROOT' in Makefile
 $ make clean && make all
 
-[Note]
-only for no-pie binaries.
-
 [ENV]
-export CSI_AFL_PATH=/apps/csi-afl
-export PATH=$PATH:$CSI_AFL_PATH
 
-#export DYNINSTAPI_RT_LIB=/apps/buildDyn101/lib/libdyninstAPI_RT.so
-#export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/apps/buildDyn101/lib
+export PATH=$PATH:/apps/csi-afl
+
+#export DYNINST_INSTALL=/home/nsc2s/apps/buildDyn10.1
 
 
-export CSI_AFL_PATH=/home/nsc2s/Experiments/rosen/CSI/csi/csi-aflfast
-export DYNINST_INSTALL=/apps/buildDyn101
 
 [RUN]
 chang to root
@@ -155,20 +113,6 @@ $ cd /sys/devices/system/cpu
 $ echo performance | tee cpu*/cpufreq/scaling_governor
 change back to user
 $ exit (or press ctrl+D)
-
-[] Don't forget to set the timeout
-
-csi-afl -i [/path/to/seed/dir] -o [/path/to/out/dir] [optional_args] -- [/path/to/target] [target_args]
-
-./csi-afl -i ../input/ -o ../output/cfafluniq1 -- ../binaries/lava-binaries/uniq 
-
-./csi-aflfast -i ../input/ -o ../output/cffastuniq1 -- ../binaries/lava-binaries/uniq
-
-./afl-fuzz -i ../inputs/ -o ../outputs/aflbase1 -Q ../../csi/csi/binaries/lava-binaries/base64
-./afl-fuzz -i ../inputs/ -o ../outputs/fastbase1 -Q ../../csi/csi/binaries/lava-binaries/base64
-
-[seed files]: csi/csi/binaries/lava-binaries; csi/csi/binaries/untracer/unbinaries/
-./csi-afl -i ../binaries/untracer_bins/binutils/seed_dir -o ../output/cfaflbinutils1 -t 500 -- ../binaries/untracer_bins/binutils/readelf -a @@
 
 
 1. audiofile/sfconvert: 
@@ -206,115 +150,6 @@ afl-fuzz -i seed_dir -o out_dir -t 500 -Q -- ./lava_bins/uniq
 
 9. lava/who
 afl-fuzz -i seed_dir -o out_dir -t 500 -Q -- ./lava_bins/who @@
-
-
-[Core word]
-1. runtime edge detect
-2. the number of instrumentations would be less
-
-
-[PROBLEMS]
-1. unique_hangs is not calculated in function save_if_interesting().
-
-2. the edge type 'NonJump' will cause some problems: the fuzzing will not reach new edges.
-
-3. at one instrumentation point, there may have more than one points that can be instrumented.
-
-4. some inputs,which find new edges, will cause time out. how to treat these inputs?
-
-[INSERT LOCATION PROBLEMS]
-the instrumentation of the following functions in programs will result in segfault.
-1. cjson/cjson
-cJSON_Delete(): 
-[Reason] indirect call
-    
-2. binutils/readelf
-get_file_header()
-get_32bit_section_headers()
-get_elf_section_flags.isra.41()
-get_program_headers.part.43()
-
-indirect jump: the number of instrument point is 2
-[Reason] indirect call, condition not taken
-not taken crash addresses:
-4240967
-4241366
-4241356
-4240983
-4253636
-4252988
-4252046
-4336276
-
-3. libksba/cert-basic: A LOT ERROR
-_ksba_calloc()
-KSBA error on file `../binaries/untracer_bins/libksba/seed_dir/betsy.crt': ASN.1 module not found:
-    [Reason] conditional jump taken, 
-
-segfault: 
-    [Reason] conditional jump not taken, 
-
-4. poppler/pdftohtml
-_ZN6PDFDoc12getStartXRefEv()???
-[Reason] contional jump not taken
-
-5.libjpeg/djpeg
-[Reason] indirect call
-
-6. libarchive/bsdtar
-indirect call: the number of instrument point is 2
-
-7. tcpdump/tcpdump
-to test tcpdump, install dependencies:
-apt-get install libsqlite3-0 libpcap0.8 
-
-indirect jump: the number of instrument point is larger than 2 (2~8)
-[REASON] nojump
-
-
-int inst_count=0, count_taken = 0, count_not = 0, 
-count_injmp=0, count_incall=0, count_uncond = 0, count_nojump=0, count_inret;
-
-
-[] Implementation Process
-1. CSIReInst: 
-    1) -i, -o, -R different meaning.
-    2) Delete instrumentation for tracer and trimmer
-
-2. remove the mainExit:
-    Except the initial funtions listed, ingore other unknown initial functions.
-    // csi-afl.c: init_addrs();
-
-3. add time for instrumentation
-    csi-afl.c: inst_time
-
-4. comment for test:
-    CSIDyninst.cpp:1034
-    CSIReinst.cpp:946
-
-Instrument a binary
-
-`./CSIDyninst -i ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o ../outputs/tcpinst -B 
-../outputs/tcpdir -O`
-
-Re-instrument the binary
-
-`./CSIReinst -i ../outputs/tcpinst -R ../outputs/target-binaries/target-bins-afl/untracer_bins/tcpdump/tcpdump -o 
-../outputs/tcpre -B ../outputs/tcpdir -E ../outputs/tcpdir/ -O`
-
-run csi-afl to test readelf:
-
-```
-./csi-afl -i ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/seed_dir/ -o 
-../outputs/readtest -t 500 -- ../outputs/target-binaries/target-bins-afl/untracer_bins/binutils/readelf -a @@
-```
-
-
-
-
-
-
-
 
 
 

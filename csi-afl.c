@@ -89,8 +89,6 @@ EXP_ST s32 trimmer_fsrv_ctlFD,         /* Forkserver control pipes         */
            trimmer_child_PID;          /* Forkserver child PIDs            */
 
 unsigned long mark_src_addr=0, mark_des_addr=0; //rosen
-static u64 inst_start, inst_end; // instrumentation time
-static float inst_time;
 /* -------------- Untracer-AFL vars ------------------------------------- */
 
 #define FORKSRV_FD 198            /* Hardcoded forkserver FD's. Utilized in IPC. */
@@ -127,8 +125,6 @@ EXP_ST s32 oracle_fsrv_ctlFD,         /* Forkserver control pipes         */
 EXP_ST u8 *target_path,               /* Path to target binary            */ 
           *tracer_path,               /* Path to tracer binary            */
           *oracle_path,               /* Path to oracle binary            */
-          *old_oracle_path,         /* Path to instrumented oracle binary  */
-          *old_crash_path,     /* Path to old crash oracle             */
           *crash_path;         /* Path to crash oracle             */
            
 
@@ -386,7 +382,7 @@ enum {
 // #define FAULT_INDIRECT 7 /* add for indirect calls/jumps */
 
 
-static void execute(char * tmp[], char * pid_name, int print_output){
+void execute(char * tmp[], char * pid_name, int print_output){
 
   /* Helper function for running execve() with error checking
    * and toggle-able STDOUT printing. */
@@ -415,7 +411,7 @@ static void execute(char * tmp[], char * pid_name, int print_output){
   return;
 }
 
-static void copy_file(char* src_path, char* dst_path){
+void copy_file(char* src_path, char* dst_path){
 
   /* Helper function to copy files. */
 
@@ -462,10 +458,8 @@ static void setup_args(int argc, char ** argv){
   ck_free(tmp);
 
   oracle_path = alloc_printf("%s/CSI/%s.oracle", out_dir, basename(target_path));
-  old_oracle_path = alloc_printf("%s/CSI/%s.oracle_old", out_dir, basename(target_path));
   tracer_path = alloc_printf("%s/CSI/%s.tracer", out_dir, basename(target_path));
   crash_path = alloc_printf("%s/CSI/%s.crasher", out_dir, basename(target_path));
-  old_crash_path = alloc_printf("%s/CSI/%s.crasher_old", out_dir, basename(target_path));
   trimmer_path = alloc_printf("%s/CSI/%s.trimmer", out_dir, basename(target_path));//rosen
 
   /* create directories for recorded addresses*/
@@ -505,105 +499,82 @@ static void setup_args(int argc, char ** argv){
 }
 
 
-// static void init_addrs(){
-//   /* get addrs before main()*/
+void init_addrs(){
+  /* get addrs before main()*/
   
-//   char * dyninst_args_tracer[] = {"CSIDyninst", "-i", target_path, "-o", tracer_path, "-B", tracer_addr_dir, "-e", "-T", NULL};
-//   execute(dyninst_args_tracer, "CSIDyninst", 1);
+  char * dyninst_args_tracer[] = {"CSIDyninst", "-i", target_path, "-o", tracer_path, "-B", tracer_addr_dir, "-e", "-T", NULL};
+  execute(dyninst_args_tracer, "CSIDyninst", 1);
 
-//   char * dummy_args[] = {tracer_path, NULL};
-//   execute(dummy_args, tracer_path, 0);
+  char * dummy_args[] = {tracer_path, NULL};
+  execute(dummy_args, tracer_path, 0);
 
 
-//   return;
+  return;
 
-// }
+}
 
-/* the initial instrumentation for oracle, crasher, tracer, trimmer;
-instrument the original binary */
-static void init_instrumentation(){
-  ACTF("Instrumenting oracle...");
-  char * dyninst_args_oracle[] = {"CSIDyninst", "-i", target_path, "-o", oracle_path, "-B", oracle_addr_dir, "-O", NULL};
-  execute(dyninst_args_oracle, "CSIDyninst", 1);
-  OKF("oracle instrumented!");
-  copy_file(oracle_path, old_oracle_path);
-  //if (stop_soon) goto stop_fuzzing;
 
-  ACTF("Instrumenting crasher...");
-  char * dyninst_args_crasher[] = {"CSIDyninst", "-i", target_path, "-o", crash_path, "-B", crash_addr_dir, "-C", NULL};
-  execute(dyninst_args_crasher, "CSIDyninst", 1);
-  OKF("crasher instrumented!");
-  copy_file(crash_path, old_crash_path);
-  //if (stop_soon) goto stop_fuzzing;
+// for checking crash 
+void instrument_crasher(unsigned short dedup){
 
-  ACTF("Instrumenting tracer...");
+  /* Instrument the original binary */
+
+  if(dedup==1){ //remove the recorded addresses that are duplicated
+    char * dyninst_args_crasher[] = {"CSIDyninst", "-i", target_path, "-o", crash_path, "-B", crash_addr_dir, "-E", tracer_addr_dir, "-C", NULL};
+    execute(dyninst_args_crasher, "CSIDyninst", 1);
+  }
+  else{
+    char * dyninst_args_crasher[] = {"CSIDyninst", "-i", target_path, "-o", crash_path, "-B", crash_addr_dir, "-C", NULL};
+    execute(dyninst_args_crasher, "CSIDyninst", 1);
+  }
+  
+
+  return;
+}
+
+void instrument_oracle(unsigned short dedup){
+
+  /* Instrument the original binary 
+    * dedup = 1: use address files from tracer
+    * dedup = 0: don't use address files from tracer
+  */
+
+  if(dedup==1){ //remove the recorded addresses that are duplicated
+    char * dyninst_args_oracle[] = {"CSIDyninst", "-i", target_path, "-o", oracle_path, "-B", oracle_addr_dir, "-E", tracer_addr_dir, "-O", NULL};
+    execute(dyninst_args_oracle, "CSIDyninst", 1);
+  }
+  else{
+    char * dyninst_args_oracle[] = {"CSIDyninst", "-i", target_path, "-o", oracle_path, "-B", oracle_addr_dir, "-O", NULL};
+    execute(dyninst_args_oracle, "CSIDyninst", 1);
+  }
+  
+
+  return;
+}
+
+
+void instrument_tracer(){
+
+  /* Instrument the original binary */
+  
   char * dyninst_args_tracer[] = {"CSIDyninst", "-i", target_path, "-o", tracer_path, "-B", tracer_addr_dir, "-T", NULL};
   execute(dyninst_args_tracer, "CSIDyninst", 1);
-  OKF("tracer instrumented!");
-  //if (stop_soon) goto stop_fuzzing;
-
-  ACTF("Instrumenting trimmer...");
-  char * dyninst_args_trimmer[] = {"CSIDyninst", "-i", target_path, "-o", trimmer_path, "-B", trimmer_addr_dir, "-M", NULL};
-  execute(dyninst_args_trimmer, "CSIDyninst", 1);
-  OKF("trimmer instrumented!");
-  //if (stop_soon) goto stop_fuzzing;
-
-}
-
-// for checking crash; use CSIReinst
-/* -i: The previous instrumented binary 
-   -R: The reference binary for re-rewriting (the original binary)
-   -o: Output binary */
-static void instrument_crasher(){
-
- 
-  char * dyninst_args_crasher[] = {"CSIReinst", "-i", old_crash_path, "-R", target_path, "-o", crash_path, 
-                                  "-B", crash_addr_dir, "-E", tracer_addr_dir, "-C", NULL};
-  execute(dyninst_args_crasher, "CSIReinst", 1);
-
-  copy_file(crash_path, old_crash_path);
-
-
 
   return;
 }
 
-// use CSIReinst
-static void instrument_oracle(){
-
-  char * dyninst_args_oracle[] = {"CSIReinst", "-i", old_oracle_path, "-R", target_path, "-o", oracle_path, 
-                                  "-B", oracle_addr_dir, "-E", tracer_addr_dir, "-O", NULL};
-  execute(dyninst_args_oracle, "CSIReinst", 1);
-
-  copy_file(oracle_path, old_oracle_path);
-
+//rsoen
+void instrument_trimmer(){
+  /* when new coverage is still met, the trimming of test case has no effect */
+  /* Instrument the original binary */
+  
+  char * dyninst_args_tracer[] = {"CSIDyninst", "-i", target_path, "-o", trimmer_path, "-B", trimmer_addr_dir, "-E", tracer_addr_dir, "-M", NULL};
+  execute(dyninst_args_tracer, "CSIDyninst", 1);
 
   return;
 }
 
-
-// static void instrument_tracer(){
-
-//   /* Instrument the original binary */
-  
-//   char * dyninst_args_tracer[] = {"CSIDyninst", "-i", target_path, "-o", tracer_path, "-B", tracer_addr_dir, "-T", NULL};
-//   execute(dyninst_args_tracer, "CSIDyninst", 1);
-
-//   return;
-// }
-
-// //rsoen
-// static void instrument_trimmer(){
-//   /* when new coverage is still met, the trimming of test case has no effect */
-//   /* Instrument the original binary */
-  
-//   char * dyninst_args_tracer[] = {"CSIDyninst", "-i", target_path, "-o", trimmer_path, "-B", trimmer_addr_dir, "-E", tracer_addr_dir, "-M", NULL};
-//   execute(dyninst_args_tracer, "CSIDyninst", 1);
-
-//   return;
-// }
-
-static void remove_recorded_addrs(u8* dir_to_binary){
+void remove_recorded_addrs(u8* dir_to_binary){
   /* remove the recorded addresses created by target binary*/
 
   u8* tmp;
@@ -2757,11 +2728,10 @@ void init_path_marks(){
 
       close(fd);
 
-      ACTF("run oracle");
       write_to_testcase(use_mem, q->len);
       fault = run_target(&oracle_child_PID, &oracle_fsrv_ctlFD, &oracle_fsrv_stFD, exec_tmout);
       path_mark_calc();
-      ACTF("finished oracle");
+      
       /* path marks; every initial seed has a path mark, but they could be the same,
       * because it cannot ensure that every initial seed can reach a new coverage.*/
       for (int i=0; i < MARK_SIZE; i++){
@@ -2770,22 +2740,14 @@ void init_path_marks(){
       }
 
       if (fault == FAULT_COND || fault ==FAULT_INDIRECT){
-        ACTF("run tracer");
+
         remove_recorded_addrs(tracer_addr_dir);
         write_to_testcase(use_mem, q->len);
         run_target(&tracer_child_PID, &tracer_fsrv_ctlFD, &tracer_fsrv_stFD, exec_tmout);
         total_traced++;
         total_queued++;
-        ACTF("finished tracer");
         stop_forkserver(&oracle_fsrv_PID, &oracle_fsrv_ctlFD, &oracle_fsrv_stFD);
-
-        ACTF("instrument oracle");
-        inst_start = get_cur_time();
-        instrument_oracle();
-        inst_end = get_cur_time();
-        inst_time = (float)(inst_end - inst_start) / 1000.0; //seconds
-        ACTF("finished instrument");
-
+        instrument_oracle(1);
         start_forkserver(&oracle_fsrv_PID, &oracle_fsrv_ctlFD, &oracle_fsrv_stFD, FORKSRV_FD, oracle_argv);
       }
       
@@ -3192,12 +3154,7 @@ static u8 save_if_interesting(void* mem, u32 len, u8 fault) {
     total_traced++;
 
     stop_forkserver(&oracle_fsrv_PID, &oracle_fsrv_ctlFD, &oracle_fsrv_stFD);
-
-    inst_start = get_cur_time();
-    instrument_oracle();
-    inst_end = get_cur_time();
-    inst_time = (float)(inst_end - inst_start) / 1000.0; //seconds
-
+    instrument_oracle(1);
     start_forkserver(&oracle_fsrv_PID, &oracle_fsrv_ctlFD, &oracle_fsrv_stFD, FORKSRV_FD, oracle_argv);
 
 
@@ -3258,7 +3215,7 @@ static u8 save_if_interesting(void* mem, u32 len, u8 fault) {
       write_to_testcase(mem, len);
       run_target(&tracer_child_PID, &tracer_fsrv_ctlFD, &tracer_fsrv_stFD, exec_tmout);
       stop_forkserver(&crash_fsrv_PID, &crash_fsrv_ctlFD, &crash_fsrv_stFD);
-      instrument_crasher();
+      instrument_crasher(1);
       start_forkserver(&crash_fsrv_PID, &crash_fsrv_ctlFD, &crash_fsrv_stFD, FORKSRV_FD, crash_argv);  
       if (!unique_crashes) write_crash_readme();
 
@@ -3526,7 +3483,7 @@ static void maybe_update_plot_file(double bitmap_cvg, double eps) {
      execs_per_sec */
 
   fprintf(plot_file, 
-          "%llu, %llu, %u, %u, %u, %u, %0.02f%%, %llu, %llu, %u, %0.02f, %llu, %u, %llu, %i, %i, %llu, %i, %i, %0.02f\n",
+          "%llu, %llu, %u, %u, %u, %u, %0.02f%%, %llu, %llu, %u, %0.02f, %llu, %u, %llu, %i, %i, %llu, %i, %i\n",
           get_cur_time() / 1000, queue_cycle - 1, current_entry, queued_paths,
           pending_not_fuzzed, pending_favored, bitmap_cvg, unique_crashes,
           unique_hangs, max_depth, eps, 
@@ -3540,8 +3497,7 @@ static void maybe_update_plot_file(double bitmap_cvg, double eps) {
 
           total_tmouts,
           trace_tmouts,
-          trace_nobits,
-          inst_time
+          trace_nobits
 
           ); 
 
@@ -5134,7 +5090,7 @@ static u8 fuzz_one() {
         FATAL("Unable to execute target application");
 
       // stop_forkserver(&oracle_fsrv_PID, &oracle_fsrv_ctlFD, &oracle_fsrv_stFD);//rosen
-      // instrument_oracle();
+      // instrument_oracle(1);
       // start_forkserver(&oracle_fsrv_PID, &oracle_fsrv_ctlFD, &oracle_fsrv_stFD, FORKSRV_FD, oracle_argv);
 
     }
@@ -7200,7 +7156,7 @@ EXP_ST void setup_dirs_fds(void) {
                      "unique_hangs, max_depth, execs_per_sec, "
                      "execs_done, calib_execs, trim_execs, "
                      "total_traced, total_queued, "
-                     "total_tmouts, trace_tmouts, trace_nobits, instrument_time "
+                     "total_tmouts, trace_tmouts, trace_nobits "
                      "\n");
 }
 
@@ -7763,55 +7719,25 @@ int main(int argc, char** argv) {
 
   setup_args(argc, argv);
 
-  // ACTF("get addrs before main()...");
-  // init_addrs();
-  // OKF("The addrs before main() are got.");
+  ACTF("get addrs before main()...");
+  init_addrs();
+  OKF("The addrs before main() are got.");
   
-  // ACTF("Setting up crasher binary...");
-  // instrument_crasher();
-  // if (stop_soon) goto stop_fuzzing;
-
-  // ACTF("Setting up trimmer binary...");
-  // instrument_trimmer();
-  // if (stop_soon) goto stop_fuzzing;
-
-  // ACTF("Setting up oracle binary...");
-  // instrument_oracle();
-  // if (stop_soon) goto stop_fuzzing;
-
-  // ACTF("Setting up tracer binary...");
-  // instrument_tracer();
-  // if (stop_soon) goto stop_fuzzing;
-
-
-  ACTF("Starting initial instrumentation...");
-  init_instrumentation();
+  ACTF("Setting up crasher binary...");
+  instrument_crasher(1);
   if (stop_soon) goto stop_fuzzing;
 
-  // ACTF("Instrument oracle...");
-  // char * dyninst_args_oracle[] = {"CSIDyninst", "-i", target_path, "-o", oracle_path, "-B", oracle_addr_dir, "-O", NULL};
-  // execute(dyninst_args_oracle, "CSIDyninst", 1);
-  // OKF("oracle instrumented!");
-  // if (stop_soon) goto stop_fuzzing;
+  ACTF("Setting up trimmer binary...");
+  instrument_trimmer();
+  if (stop_soon) goto stop_fuzzing;
 
-  // ACTF("Instrument crasher...");
-  // char * dyninst_args_crasher[] = {"CSIDyninst", "-i", target_path, "-o", crash_path, "-B", crash_addr_dir, "-C", NULL};
-  // execute(dyninst_args_crasher, "CSIDyninst", 1);
-  // OKF("crasher instrumented!");
-  // if (stop_soon) goto stop_fuzzing;
+  ACTF("Setting up oracle binary...");
+  instrument_oracle(1);
+  if (stop_soon) goto stop_fuzzing;
 
-  // ACTF("Instrument tracer...");
-  // char * dyninst_args_tracer[] = {"CSIDyninst", "-i", target_path, "-o", tracer_path, "-B", tracer_addr_dir, "-T", NULL};
-  // execute(dyninst_args_tracer, "CSIDyninst", 1);
-  // OKF("tracer instrumented!");
-  // if (stop_soon) goto stop_fuzzing;
-
-  // ACTF("Instrument trimmer...");
-  // char * dyninst_args_trimmer[] = {"CSIDyninst", "-i", target_path, "-o", trimmer_path, "-B", trimmer_addr_dir, "-M", NULL};
-  // execute(dyninst_args_trimmer, "CSIDyninst", 1);
-  // OKF("trimmer instrumented!");
-  // if (stop_soon) goto stop_fuzzing;
-
+  ACTF("Setting up tracer binary...");
+  instrument_tracer();
+  if (stop_soon) goto stop_fuzzing;
   
   ACTF("Starting tracer forkserver...");
   start_forkserver(&tracer_fsrv_PID, &tracer_fsrv_ctlFD, &tracer_fsrv_stFD, FORKSRV_FD, tracer_argv); 
