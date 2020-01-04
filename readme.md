@@ -3,7 +3,7 @@
 
 ## Install Dyninst
 
-[the branch](https://github.com/mxz297/dyninst/tree/rerewriting)
+[the branch](https://github.com/mxz297/dyninst/tree/fuzzing)
 
 ```
 git clone https://github.com/mxz297/dyninst.git
@@ -11,7 +11,7 @@ cd dyninst
 git checkout fuzzing
 #git reset --hard 5ebf1c887c712201f4df56cabde6596f2801745c
 ```
-[install instructions](https://github.com/mxz297/dyninst/tree/rerewriting)
+[install instructions](https://github.com/mxz297/dyninst)
 
 
 ## Install csi-afl
