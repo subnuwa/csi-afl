@@ -316,7 +316,8 @@
 #define MAP_SIZE_POW2       16
 #define MAP_SIZE            (1 << MAP_SIZE_POW2)
 /*Cofree def 16bits: 0xffff*/
-#define KEEP_LOW            (MAP_SIZE -1)
+//#define KEEP_LOW            (MAP_SIZE -1)
+
 
 /* Maximum allocator request size (keep well under INT_MAX): */
 

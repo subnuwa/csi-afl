@@ -21,7 +21,7 @@
 
 # var- edit DYN_ROOT accordingly
 
-DYN_ROOT 	= /apps/buildDyn101
+DYN_ROOT 	= /home/xgzhu/apps/buildDyn
 # These should point to where libelf and libdwarf are installed
 LOCAL_INC = /usr/local/include
 LOCAL_LIBS = /usr/local/lib

@@ -1,8 +1,18 @@
+/*
+TODO:
+1. first, assign ids to conditonal edges, and save (addr1, addr2, id) to a file;
+    two files: condition-taken addrs, and condition-not-taken addrs;
+    this ensures the ids are assigned identically;
+2. instrument oracle
+3. instrument tracer
+*/
+
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <string>
+#include <cmath>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -12,6 +22,7 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include "config.h"
+#include "types.h"
 
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
@@ -23,6 +34,7 @@ namespace fs = std::experimental::filesystem;
 using namespace std;
 
 #include "instConfig.h"
+#include "instUnmap.h"
 // DyninstAPI includes
 #include "BPatch.h"
 #include "BPatch_binaryEdit.h"
@@ -33,65 +45,53 @@ using namespace std;
 
 using namespace Dyninst;
 
+//hash table length
+//condition_id = 0; // assign  for each conditional edges
+static u32 num_predtm = 0, // the number of total pre-determined edges; unique id
+    num_indirect = 0,   // the number of total indirect edges
+    max_map_size = 0; // the number of all edges, including potential indirect edges
+
+
+
 //cmd line options
 char *originalBinary;
 char *instrumentedBinary;
 bool verbose = false;
-set<string> instrumentLibraries;
-set<string> runtimeLibraries;
-char* branch_dir = NULL;  //Output dir of examined branches
-char* tracer_dir = NULL; //some addresses will be read from tracer
-Category bin_cate = BIN_NONE; // category of the binary: crash/tracer/oracle
-bool mainExit=false; //true when it's the first time running tracer
-bool isOracle = false; //rosen
-bool isTracer = false;
-//bool isCrash = false;
-bool isTrimmer = false; //rosen
+char* csifuzz_dir = NULL;  //Output dir of csifuzz results
+
+bool isPrep = false, // preprocessing
+    isOracle = false, // instrument oracle
+    isTrimmer = false, // trimmer
+    isTracer = false; // instrument tracer
+
+std::unordered_map<EDGE, u32, HashEdge> cond_map;
+std::unordered_map<EDGE, u32, HashEdge> condnot_map;
+std::unordered_map<EDGE, u32, HashEdge> uncond_map;
+std::unordered_map<EDGE, u32, HashEdge> nojump_map;
 
 
-//addresses
-multimap <unsigned long, unsigned long> indcall_addrs;
-multimap <unsigned long, unsigned long> indjump_addrs; //deduplicate indirect pairs
-set <unsigned long> condnot_addrs;
-set <unsigned long> condtaken_addrs;
-
-// addrs of marks (for differentiating paths)
-multimap <unsigned long, unsigned long> mark_indcall_addrs;
-multimap <unsigned long, unsigned long> mark_indjump_addrs;
-set <unsigned long> mark_condnot_addrs;
-set <unsigned long> mark_condtaken_addrs;
-
-
-// callback functions
+// call back functions
+BPatch_function *OraclePredtm;
+BPatch_function *OracleIndirect;
 BPatch_function *initAflForkServer;
-BPatch_function *getIndAddrs;
-BPatch_function *BBCallback;
-BPatch_function *ConditionJump;
-BPatch_function *ConditionMark;
-BPatch_function *IndirectBranch;
-BPatch_function *clearMaps;
-BPatch_function *atMainExit;
-
-
+BPatch_function *TracerPredtm;
+BPatch_function *TracerIndirect;
+BPatch_function *TrimmerIndirect;
+BPatch_function *TracerLoops;
+BPatch_function *TrimmerPredtm;
 
 const char *instLibrary = "./libCSIDyninst.so";
 
-static const char *OPT_STR = "i:o:l:veB:E:r:CTOM";
-static const char *USAGE = " -i <binary> -o <binary> -l <library> -B <out-dir> -E <tracer-dir> -T\n \
-    Analyse options:\n \
+static const char *OPT_STR = "i:o:vb:PFTM";
+static const char *USAGE = " -i <binary> -o <binary> -b <csifuzz-dir> -F(PT)\n \
             -i: Input binary \n \
             -o: Output binary\n \
-            -l: Linked library to instrument (repeat for more than one)\n \
-            -e: exit when met main?\n \
-            -r: Runtime library to instrument (path to, repeat for more than one)\n \
-            -B: Output dir of examined branches (addresses)\n \
+            -b: Output dir of csifuzz results\n \
             -v: Verbose output\n \
-            -E: Extended addresses from tracer\n \
-    Binary type options:\n \
-            -C: for the crash binary\n \
-            -T: for the tracer binary\n \
-            -O: for the oracle binary\n \
-            -M: for the trimmer binary\n";
+            -P: The initial preprocessing (counting edges and blocks; writing address files.)\n \
+            -F: The full-speed oracle\n \
+            -T: The tracer\n \
+            -M: The trimmer\n";
 
 bool parseOptions(int argc, char **argv)
 {
@@ -105,37 +105,22 @@ bool parseOptions(int argc, char **argv)
         case 'o':
             instrumentedBinary = optarg;
             break;
-        case 'l':
-            instrumentLibraries.insert(optarg);
-            break;
-        case 'r':
-            runtimeLibraries.insert(optarg);
-            break;
-        case 'e':
-            mainExit = true;
-            break;
-        case 'B':
-            branch_dir = optarg;
-            break;
-        case 'E':
-            tracer_dir = optarg;
+        case 'b':
+            csifuzz_dir = optarg;
             break;
         case 'v':
             verbose = true;
             break;
-        case 'C':
-            bin_cate = BIN_CRASH;
+        case 'P':
+            isPrep = true;
             break;
-        case 'T':
-            bin_cate = BIN_TRACER;
-            isTracer = true;
-            break;
-        case 'O':
-            bin_cate = BIN_ORACLE;
+        case 'F':
             isOracle = true;
             break;
+        case 'T':
+            isTracer = true;
+            break;
         case 'M':
-            bin_cate = BIN_TRIMMER;
             isTrimmer = true;
             break;
         default:
@@ -150,20 +135,20 @@ bool parseOptions(int argc, char **argv)
         return false;
     }
 
-    if(instrumentedBinary == NULL) {
-        cerr << "Output binary is required!" << endl;
+    if((instrumentedBinary == NULL) && (isPrep == false)) {
+        cerr << "Output binary or -P is required!" << endl;
         cerr << "Usage: " << argv[0] << USAGE;
         return false;
     }
 
-    if(branch_dir == NULL){
-        cerr << "Output directory for addresses is required!" << endl;
+    if(csifuzz_dir == NULL){
+        cerr << "Output directory for csifuzz is required!" << endl;
         cerr << "Usage: " << argv[0] << USAGE;
         return false;
     }
 
-    if(bin_cate == BIN_NONE){
-        cerr << "For oracle/tracer/crash/trimmer (-C/-T/-O/-M) binary is required!" << endl;
+    if ((isPrep == false) && (isOracle == false) && (isTracer == false) && (isTrimmer == false)){
+        cerr << "Specify -P, -T, -F, or -M" << endl;
         cerr << "Usage: " << argv[0] << USAGE;
         return false;
     }
@@ -184,544 +169,8 @@ BPatch_function *findFuncByName (BPatch_image * appImage, char *funcName)
     return funcs[0];
 }
 
-unsigned short calcBitmapID(unsigned long src_offset, unsigned long des_offset){
-    unsigned short low_src, low_des;
-    unsigned short branch_id;
-    low_src = (unsigned short)(src_offset & KEEP_LOW);  //src & oxffff, set the high bits to 0
-    low_des = (unsigned short)(des_offset & KEEP_LOW);
-    branch_id = (low_src>>1) ^ low_des;
-    return branch_id;
-}
-
-/*insert callback to initialization function in the instrumentation library*/  
-bool insertCallToMainEE(BPatch_binaryEdit * appBin, BPatch_function * instIncFunc, BPatch_function *funcMain)
-{
-    /* Find the instrumentation points */
-    vector < BPatch_point * >*funcLoc = funcMain->findPoint (BPatch_entry);
-
-    if (NULL == funcLoc) {
-        cerr << "Failed to find entry for function. " <<  endl;
-        return false;
-    }
-
-    BPatch_Vector < BPatch_snippet * >instArgs; 
-    BPatch_funcCallExpr instIncExpr (*instIncFunc, instArgs);
-
-    /* Insert the snippet at function entry */
-    BPatchSnippetHandle *handle =
-        appBin->insertSnippet (instIncExpr, *funcLoc, BPatch_callBefore,
-                               BPatch_lastSnippet);
-    if (!handle) {
-        cerr << "Failed to insert at main entry/exit callback." << endl;
-        return false;
-    }
-    return true;
-}
-
-//main exit
-bool insertCallToMainExit(BPatch_binaryEdit * appBin, BPatch_function * instIncFunc,
-                         BPatch_function *funcInit)
-{
-
-    /* Find the instrumentation points */
-    vector < BPatch_point * >*funcEntry = funcInit->findPoint (BPatch_exit);
-
-    if (NULL == funcEntry) {
-        cerr << "Failed to find exit for function main. " <<  endl;
-        return false;
-    }
-
-    BPatch_Vector < BPatch_snippet * >instArgs; 
-    BPatch_funcCallExpr instIncExpr (*instIncFunc, instArgs);
-
-    /* Insert the snippet at function entry */
-    BPatchSnippetHandle *handle =
-        appBin->insertSnippet (instIncExpr, *funcEntry, BPatch_callAfter,
-                               BPatch_lastSnippet);
-    if (!handle) {
-        cerr << "Failed to insert main callback." << endl;
-        return false;
-    }
-    return true;
-}
-
-
-
-// get address pairs, multimap/set
-bool insertAddrsToInit(BPatch_binaryEdit * appBin, BPatch_function * instIncFunc,
-                         BPatch_function *funcInit, fs::path out_dir)
-{
-
-    /* Find the instrumentation points */
-    vector < BPatch_point * >*funcEntry = funcInit->findPoint (BPatch_entry);
-
-    if (NULL == funcEntry) {
-        cerr << "Failed to find entry for function. " <<  endl;
-        return false;
-    }
-
-    //cout << "Inserting init callback." << endl;
-    BPatch_Vector < BPatch_snippet * >instArgs; 
-    BPatch_constExpr outDir(out_dir.c_str());
-    instArgs.push_back(&outDir);
-    BPatch_funcCallExpr instIncExpr (*instIncFunc, instArgs);
-
-    /* Insert the snippet at function entry */
-    BPatchSnippetHandle *handle =
-        appBin->insertSnippet (instIncExpr, *funcEntry, BPatch_callBefore,
-                               BPatch_firstSnippet);
-    if (!handle) {
-        cerr << "Failed to insert init callback." << endl;
-        return false;
-    }
-    return true;
-}
-
-// insert a callback for conditional marks
-bool instrumentCondMarks(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
-        BPatch_point * instrumentPoint, Dyninst::Address src_addr, Dyninst::Address des_addr){
-    vector<BPatch_snippet *> cond_args;
-    unsigned long tmp;
-    tmp = (unsigned long)src_addr;
-    BPatch_constExpr srcOffset(tmp);
-    cond_args.push_back(&srcOffset);
-    tmp = (unsigned long)des_addr;
-    BPatch_constExpr desOffset(tmp);
-    cond_args.push_back(&desOffset);
-
-
-    BPatch_funcCallExpr instCondExpr(*instFunc, cond_args);
-
-    BPatchSnippetHandle *handle =
-            appBin->insertSnippet(instCondExpr, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
-    if (!handle) {
-            cerr << "Failed to insert instrumention in basic block at offset 0x" << hex << src_addr << endl;
-            return false;
-        }
-    return true;
-}
-
-// insert a callback for conditional jumps
-bool instrumentCondJump(BPatch_binaryEdit * appBin, BPatch_function * instFunc, BPatch_point * instrumentPoint, 
-        Dyninst::Address src_addr, Dyninst::Address des_addr,fs::path out_path, fs::path mark_path){
-    vector<BPatch_snippet *> cond_args;
-    BPatch_constExpr srcOffset(src_addr);
-    cond_args.push_back(&srcOffset);
-    BPatch_constExpr desOffset(des_addr);
-    cond_args.push_back(&desOffset);    
-    BPatch_constExpr outPath(out_path.c_str());
-    cond_args.push_back(&outPath);
-    BPatch_constExpr markPath(mark_path.c_str());
-    cond_args.push_back(&markPath);
-    BPatch_constExpr CateBin(bin_cate);
-    cond_args.push_back(&CateBin);
-
-    BPatch_funcCallExpr instCondExpr(*instFunc, cond_args);
-
-    BPatchSnippetHandle *handle =
-            appBin->insertSnippet(instCondExpr, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
-    if (!handle) {
-            cerr << "Failed to insert instrumention in basic block at offset 0x" << hex << src_addr << endl;
-            return false;
-        }
-    return true;
-}
-
-
-//insert a callback for indirect jumps
-bool instrumentIndirectJump(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
-                BPatch_point * instrumentPoint, Dyninst::Address src_addr, 
-                fs::path out_path, fs::path mark_path, branType indi){
-                    
-    vector<BPatch_snippet *> ind_args;
-
-    BPatch_constExpr srcOffset((unsigned long)src_addr);
-    ind_args.push_back(&srcOffset);
-    ind_args.push_back(new BPatch_dynamicTargetExpr());//target offset
-    BPatch_constExpr outPath(out_path.c_str());
-    ind_args.push_back(&outPath);
-    BPatch_constExpr markPath(mark_path.c_str());
-    ind_args.push_back(&markPath);
-    BPatch_constExpr BranchT(indi);
-    ind_args.push_back(&BranchT);
-    BPatch_constExpr CateBin(bin_cate);
-    ind_args.push_back(&CateBin);
-
-
-    BPatch_funcCallExpr instIndirect(*instFunc, ind_args);
-
-    BPatchSnippetHandle *handle =
-            appBin->insertSnippet(instIndirect, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
-    
-    if (!handle) {
-            cerr << "Failed to insert instrumention in basic block at offset 0x" << hex << src_addr << endl;
-            return false;
-        }
-    return true;
-}
-
-
-
-bool dedupMap(multimap <unsigned long, unsigned long>& ind_addrs, fs::path ind_path){
-    /* remove duplicated elements in indirect jump records*/
-    set<unsigned long> m_fir, m_sec; //use set to de-duplicate
-    
-    if (!ind_addrs.empty()){
-        FILE *fm = fopen(ind_path.c_str(),"w");
-        if (!fm){
-            printf("cannot open file: %s.\n", ind_path.c_str());
-            return false; //cannot remove file
-        }
-        fclose(fm);
-
-        ofstream indAddr_io;
-        //get source address
-        for (auto addr_it = ind_addrs.begin(); addr_it != ind_addrs.end(); ++addr_it){
-            m_fir.insert(addr_it->first);
-        }
-        //get target address without duplication
-        for(auto fir_it = m_fir.begin(); fir_it!=m_fir.end(); ++fir_it){
-            auto addr_eq = ind_addrs.equal_range(*fir_it);
-            for(auto sec_it = addr_eq.first; sec_it != addr_eq.second; ++sec_it){
-                m_sec.insert((*sec_it).second); //target addresses without duplication
-            }
-
-            indAddr_io.open (ind_path.c_str(), ios::out | ios::app | ios::binary); //write file
-            if(indAddr_io.is_open()){
-                for(auto tar_it= m_sec.begin(); tar_it!= m_sec.end(); ++tar_it){
-                    indAddr_io << *fir_it << " " << *tar_it << endl;
-                }
-                indAddr_io.close();
-                m_sec.clear();  
-            }
-            else{
-                m_fir.clear();
-                m_sec.clear();
-                printf("cannot open file.\n");
-                return false;
-            } 
-        }
-        m_fir.clear();
-    }
-
-    return true;
-}
-
-
-bool readAdresses(fs::path outputDir, bool TrOr){
-    unsigned long src, des;
-    //file path
-    fs::path condTaken_path = outputDir / COND_TAKEN;
-    fs::path condNotTaken_path = outputDir / COND_NOT_TAKEN;
-    fs::path indCall_path = outputDir / INDIRECT_CALL;
-    fs::path indJump_path = outputDir / INDIRECT_JUMP;
-
-    //condtaken_addrs
-    ifstream condtaken_io (condTaken_path.c_str());
-    if(condtaken_io.is_open()){
-        while(condtaken_io >> src){
-            condtaken_addrs.insert(src);
-        }
-        condtaken_io.close();
-    }
-    //condnot_addrs
-    ifstream condnot_io (condNotTaken_path.c_str());
-    if(condnot_io.is_open()){
-        while(condnot_io >> src){
-            condnot_addrs.insert(src);
-        }
-        condnot_io.close();
-    }
-
-    //indcall_addrs
-    ifstream indcall_io (indCall_path.c_str());
-    if (indcall_io.is_open()){
-        while(indcall_io >> src >> des){
-            indcall_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
-        }
-        indcall_io.close();
-    }
-
-    //indjump_addrs
-    ifstream indjump_io (indJump_path.c_str());
-    if (indjump_io.is_open()){
-        while(indjump_io >> src >> des){
-            indjump_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
-        }
-        indjump_io.close();
-    }
-
-    if (isOracle && TrOr){ //when reading tracer addrs, mark addrs should not read
-        fs::path mark_condTaken_path = outputDir / MARK_COND_TAKEN;
-        fs::path mark_condNotTaken_path = outputDir / MARK_COND_NOT_TAKEN;
-        fs::path mark_indCall_path = outputDir / MARK_INDIRECT_CALL;
-        fs::path mark_indJump_path = outputDir / MARK_INDIRECT_JUMP;
-        //condtaken_addrs
-        ifstream mark_condtaken_io (mark_condTaken_path.c_str());
-        if(mark_condtaken_io.is_open()){
-            while(mark_condtaken_io >> src){
-                //a bug: oracle writes an addr but tracer doesn't have the same addr 
-                condtaken_addrs.insert(src);
-
-                mark_condtaken_addrs.insert(src);
-            }
-            mark_condtaken_io.close();
-        }
-        //condnot_addrs
-        ifstream mark_condnot_io (mark_condNotTaken_path.c_str());
-        if(mark_condnot_io.is_open()){
-            while(mark_condnot_io >> src){
-                //a bug: oracle marks an addr but tracer doesn't write the same addr
-                condnot_addrs.insert(src);
-                
-                mark_condnot_addrs.insert(src);
-            }
-            mark_condnot_io.close();
-        }
-        
-        //indcall_addrs
-        ifstream mark_indcall_io (mark_indCall_path.c_str());
-        if (mark_indcall_io.is_open()){
-            while(mark_indcall_io >> src >> des){
-                //a bug: oracle marks an addr but tracer doesn't write the same addr
-                indcall_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
-
-                mark_indcall_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
-            }
-            mark_indcall_io.close();
-        }
-
-        //indjump_addrs
-        ifstream mark_indjump_io (mark_indJump_path.c_str());
-        if (mark_indjump_io.is_open()){
-            while(mark_indjump_io >> src >> des){
-                //a bug: oracle marks an addr but tracer doesn't write the same addr
-                indjump_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
-
-                mark_indjump_addrs.insert(std::pair<unsigned long, unsigned long>(src,des));
-            }
-            mark_indjump_io.close();
-        }
-    }
-
-    return true;
-
-}
-
-bool rewriteCondAddr(set<unsigned long> &cond_addrs, fs::path cond_path){
-    FILE *fm = fopen(cond_path.c_str(),"w");
-    if (!fm){
-        printf("cannot open file: %s.\n", cond_path.c_str());
-        return false; //cannot delete file contents
-    }
-    fclose(fm); //delete contents
-
-    if(!cond_addrs.empty()){
-        ofstream waddrs;
-        waddrs.open (cond_path.c_str(), ios::out | ios::app | ios::binary); //write file
-        if(waddrs.is_open()){
-            for(auto coit = cond_addrs.begin(); coit != cond_addrs.end(); ++coit){
-                waddrs << *coit << endl;
-            }
-            waddrs.close();
-            return true;
-        }
-        else return false;
-    }
-    return true;
-}
-
-void dealAddressFiles(fs::path outputDir){
-    
-    //main binary
-    readAdresses(outputDir, true);
-
-    if(isOracle){
-
-        fs::path markcondTaken_path = outputDir / MARK_COND_TAKEN;
-        fs::path markcondNotTaken_path = outputDir / MARK_COND_NOT_TAKEN;
-        fs::path markindCall_path = outputDir / MARK_INDIRECT_CALL;
-        fs::path markindJump_path = outputDir / MARK_INDIRECT_JUMP;
-        if(!dedupMap(mark_indcall_addrs, markindCall_path)){
-            printf("error in de-duplicate call addresses.\n");
-            exit(EXIT_FAILURE);
-        }
-
-        if(!dedupMap(mark_indjump_addrs, markindJump_path)){
-            printf("error in de-duplicate jump addresses.\n");
-            exit(EXIT_FAILURE);
-        }
-
-        if(!rewriteCondAddr(mark_condtaken_addrs, markcondTaken_path)){
-            printf("error in re-writing condition taken addresses.\n");
-            exit(EXIT_FAILURE);
-        }
-        if (!rewriteCondAddr(mark_condnot_addrs, markcondNotTaken_path)){
-            printf("error in re-writing condition not taken addresses.\n");
-            exit(EXIT_FAILURE);
-        } 
-    } 
-
-    /* from tracer */
-    if(tracer_dir != NULL){
-        fs::path tracerDir(tracer_dir);
-        //file path
-        fs::path condTaken_path = outputDir / COND_TAKEN;
-        fs::path condNotTaken_path = outputDir / COND_NOT_TAKEN;
-        fs::path indCall_path = outputDir / INDIRECT_CALL;
-        fs::path indJump_path = outputDir / INDIRECT_JUMP;
-        
-        readAdresses(tracerDir, false);
-        
-        if(!dedupMap(indcall_addrs, indCall_path)){
-            printf("error in de-duplicate call addresses.\n");
-            exit(EXIT_FAILURE);
-        }
-
-        if(!dedupMap(indjump_addrs, indJump_path)){
-            printf("error in de-duplicate jump addresses.\n");
-            exit(EXIT_FAILURE);
-        }
-
-        if(!rewriteCondAddr(condtaken_addrs, condTaken_path)){
-            printf("error in re-writing condition taken addresses.\n");
-            exit(EXIT_FAILURE);
-        }
-        if (!rewriteCondAddr(condnot_addrs, condNotTaken_path)){
-            printf("error in re-writing condition not taken addresses.\n");
-            exit(EXIT_FAILURE);
-        }         
-    }
-
-}
-
-
-
-/*whether the paddr has been instrumented
-* true: instrumented 
-* false: not instrumented
-*/
-bool isInstrumented(Dyninst::Address paddr, branType type){
-    unsigned long addr_find = (unsigned long)paddr;
-    set <unsigned long> temp_cond;
-    switch(type){
-        case TYPE_CTAKEN:
-            temp_cond = condtaken_addrs;
-            break;
-        case TYPE_NCTAKEN:
-            temp_cond = condnot_addrs;
-            break;
-        default:
-            cout << "wrong insert type!!" << endl;
-            return false;
-    }
-    if (!temp_cond.empty()){
-        if (temp_cond.count(addr_find)) return true;
-        else return false;
-            }
-    else //no recorded addresses
-    {
-        return false;
-    }
-
-}
-
-/*whether the src_addr has been recorded as a mark
-* true: is a mark
-* false: not a mark
-*/
-bool isMarks(Dyninst::Address src_addr, branType type){
-    unsigned long addr_find = (unsigned long)src_addr;
-    set <unsigned long> temp_cond;
-    switch(type){
-        case TYPE_CTAKEN:
-            temp_cond = mark_condtaken_addrs;
-            break;
-        case TYPE_NCTAKEN:
-            temp_cond = mark_condnot_addrs;
-            break;
-        default:
-            cout << "wrong type of marks!!" << endl;
-            return false;
-    }
-    if (!temp_cond.empty()){
-        if (temp_cond.count(addr_find)) return true;
-        else return false;
-    }
-    else //no recorded addresses
-    {
-        return false;
-    }
-
-}
-
-//clear maps
-void clearAddrMaps(void){
-    condnot_addrs.clear();
-    condtaken_addrs.clear();
-    indcall_addrs.clear();
-    indjump_addrs.clear();
-    mark_condnot_addrs.clear();
-    mark_condtaken_addrs.clear();
-    mark_indcall_addrs.clear();
-    mark_indjump_addrs.clear();
-}
-
-/* for each brach, insert ID; used for bitmap*/
-bool insertBranchID(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
-                BPatch_point * instrumentPoint, unsigned short id){
-    vector<BPatch_snippet *> ind_args;
-    BPatch_constExpr cbID(id);
-    ind_args.push_back(&cbID);
-    
-    BPatch_funcCallExpr instFuncID(*instFunc, ind_args);
-
-    BPatchSnippetHandle *handle =
-            appBin->insertSnippet(instFuncID, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
-    
-    if (!handle) {
-            cerr << "Failed to insert instrumention branch id: " <<
-                 id << endl;
-            return false;
-        }
-    return true;
-}
-
-
-
-bool insertBBCallback(BPatch_binaryEdit * appBin, BPatch_image *appImage, vector < BPatch_function * >::iterator funcIter,
-                            char *funcName, fs::path out_dir)
-{
-    BPatch_function *curFunc = *funcIter;
-
-    fs::path condTakenPath = out_dir / COND_TAKEN;
-    fs::path condNotPath = out_dir / COND_NOT_TAKEN;
-    fs::path IndJumpPath = out_dir / INDIRECT_JUMP;
-    fs::path IndCallPath = out_dir / INDIRECT_CALL;
-    //for path marks
-    fs::path markTakenPath = out_dir / MARK_COND_TAKEN;
-    fs::path markNotPath = out_dir / MARK_COND_NOT_TAKEN;
-    fs::path markJumpPath = out_dir / MARK_INDIRECT_JUMP;
-    fs::path markCallPath = out_dir / MARK_INDIRECT_CALL;
-
-    /* Other blocks to ignore. */
-    /* 
-         
-        string(funcName) == string("cJSON_Delete") ||
-        string(funcName) == string("free") ||
-        string(funcName) == string("fnmatch") ||
-        string(funcName) == string("readlinkat") ||
-        string(funcName) == string("malloc") ||
-        string(funcName) == string("calloc") ||
-        string(funcName) == string("realloc") ||
-        string(funcName) == string("argp_failure") ||
-        string(funcName) == string("argp_help") ||
-        string(funcName) == string("argp_state_help") ||
-        string(funcName) == string("argp_error") ||
-        string(funcName) == string("argp_parse") || 
-
-    */
-    
+//skip some functions
+bool isSkipFuncs(char* funcName){
     if (string(funcName) == string("first_init") ||
         string(funcName) == string("__mach_init") ||
         string(funcName) == string("_hurd_init") ||
@@ -748,7 +197,7 @@ bool insertBBCallback(BPatch_binaryEdit * appBin, BPatch_image *appImage, vector
         string(funcName) == string("__libc_csu_init") ||
         string(funcName) == string("__libc_csu_fini") ||
         string(funcName) == string("start") ||
-        string(funcName) == string("_start") ||  // here's a bug on hlt
+        string(funcName) == string("_start") || 
         string(funcName) == string("__libc_start_main") ||
         string(funcName) == string("__gmon_start__") ||
         string(funcName) == string("__cxa_atexit") ||
@@ -762,29 +211,443 @@ bool insertBBCallback(BPatch_binaryEdit * appBin, BPatch_image *appImage, vector
         string(funcName) == string("_dl_start_user") ||
         string(funcName) == string("_dl_init_first") ||
         string(funcName) == string("_dl_init")) {
-        return true; //continue to insert
-    }
-    
+        return true; //skip these functions
+        }
+    return false;    
+}
+
+
+//count the number of indirect and conditaional edges
+bool count_edges(BPatch_binaryEdit * appBin, BPatch_image *appImage, 
+                    vector < BPatch_function * >::iterator funcIter, 
+                    char* funcName, fs::path output_dir){
+    fs::path cond_addr_ids = output_dir / COND_ADDR_ID; // out_dir: csifuzz outputs;
+    fs::path condnot_addr_ids = output_dir / COND_NOT_ADDR_ID;
+    fs::path nojump_addr_ids = output_dir / NO_JUMP_ADDR_ID; // edges without jumps
+    fs::path unjump_addr_ids = output_dir / UNCOND_JUMP_ADDR_ID; // unconditional jumps
+
+    BPatch_function *curFunc = *funcIter;
     BPatch_flowGraph *appCFG = curFunc->getCFG ();
-    if (!appCFG) {
-        cerr << "Failed to find CFG for function " << funcName << endl;
-        clearAddrMaps();
-        return false;
-    }
 
     BPatch_Set < BPatch_basicBlock * > allBlocks;
     if (!appCFG->getAllBasicBlocks (allBlocks)) {
         cerr << "Failed to find basic blocks for function " << funcName << endl;
-        clearAddrMaps();
         return false;
     } else if (allBlocks.size () == 0) {
         cerr << "No basic blocks for function " << funcName << endl;
-        clearAddrMaps();
         return false;
     }
 
-    unsigned short block_id;
-    //BPatch_Set < BPatch_basicBlock * >::iterator bb_iter;
+    ofstream CondTaken_file, CondNot_file, NoJump_file, UncondJump_file;
+    CondTaken_file.open (cond_addr_ids.c_str(), ios::out | ios::app | ios::binary); //write file
+    CondNot_file.open (condnot_addr_ids.c_str(), ios::out | ios::app | ios::binary); //write file
+    NoJump_file.open (nojump_addr_ids.c_str(), ios::out | ios::app | ios::binary); //write file
+    UncondJump_file.open (unjump_addr_ids.c_str(), ios::out | ios::app | ios::binary); //write file
+
+    set < BPatch_basicBlock *>::iterator bb_iter;
+    BPatch_basicBlock *src_bb = NULL;
+    BPatch_basicBlock *trg_bb = NULL;
+    unsigned long src_addr = 0;
+    unsigned long trg_addr = 0;
+
+    for (bb_iter = allBlocks.begin (); bb_iter != allBlocks.end (); bb_iter++){
+        BPatch_basicBlock * block = *bb_iter;
+        vector<pair<Dyninst::InstructionAPI::Instruction, Dyninst::Address> > insns;
+        block->getInstructions(insns);
+
+        //Dyninst::Address addr = insns.back().second;  //addr: equal to offset when it's binary rewrite
+        Dyninst::InstructionAPI::Instruction insn = insns.back().first; 
+        Dyninst::InstructionAPI::Operation op = insn.getOperation();
+        Dyninst::InstructionAPI::InsnCategory category = insn.getCategory();
+        Dyninst::InstructionAPI::Expression::Ptr expt = insn.getControlFlowTarget();
+
+        //conditional jumps
+        vector<BPatch_edge *> outgoingEdge;
+        block->getOutgoingEdges(outgoingEdge);
+        vector<BPatch_edge *>::iterator edge_iter;
+
+        
+        for(edge_iter = outgoingEdge.begin(); edge_iter != outgoingEdge.end(); ++edge_iter) {
+            src_bb = (*edge_iter)->getSource();
+            trg_bb = (*edge_iter)->getTarget();
+            src_addr = src_bb->getStartAddress();
+            trg_addr = trg_bb->getStartAddress();
+            //count pre-determined edges
+            if ((*edge_iter)->getType() == CondJumpTaken){
+
+                if(CondTaken_file.is_open()){
+                    CondTaken_file << src_addr << " " << trg_addr << " " << num_predtm << endl; 
+                    
+                }
+                else{
+                    cout << "cannot open the file: " << cond_addr_ids.c_str() << endl;
+                    return false;
+                }
+                num_predtm++;
+            }
+            else if ((*edge_iter)->getType() == CondJumpNottaken){
+                if(CondNot_file.is_open()){
+                    CondNot_file << src_addr << " " << trg_addr << " " << num_predtm << endl; 
+                    
+                }
+                else{
+                    cout << "cannot open the file: " << condnot_addr_ids.c_str() << endl;
+                    return false;
+                }
+                num_predtm++;
+            }
+            else if ((*edge_iter)->getType() == UncondJump){
+                if(UncondJump_file.is_open()){
+                    UncondJump_file << src_addr << " " << trg_addr << " " << num_predtm << endl; 
+                    
+                }
+                else{
+                    cout << "cannot open the file: " << unjump_addr_ids.c_str() << endl;
+                    return false;
+                }
+                num_predtm++;
+            }
+            else if ((*edge_iter)->getType() == NonJump){
+                if(NoJump_file.is_open()){
+                    NoJump_file << src_addr << " " << trg_addr << " " << num_predtm << endl; 
+                    
+                }
+                else{
+                    cout << "cannot open the file: " << nojump_addr_ids.c_str() << endl;
+                    return false;
+                }
+               num_predtm++;
+            }         
+            
+        }
+
+        //indirect edges
+        for(Dyninst::InstructionAPI::Instruction::cftConstIter iter = insn.cft_begin(); iter != insn.cft_end(); ++iter) {
+            if(iter->isIndirect) {
+                
+                if(category == Dyninst::InstructionAPI::c_CallInsn) {//indirect call
+                    num_indirect++;
+                }
+                else if(category == Dyninst::InstructionAPI::c_BranchInsn) {//indirect jump
+                    num_indirect++;
+                }
+                else if(category == Dyninst::InstructionAPI::c_ReturnInsn) {
+                    num_indirect++;
+                }
+ 
+            }
+        }
+
+    }
+
+    CondTaken_file.close();
+    CondNot_file.close();
+    NoJump_file.close();
+    UncondJump_file.close();
+
+    return true;
+    
+}
+
+// read addresses and ids from files; ensure that Oracle and Tracer has the same ids
+bool readAddrs(fs::path output_dir){
+    fs::path cond_addr_ids = output_dir / COND_ADDR_ID; // condition taken;
+    fs::path condnot_addr_ids = output_dir / COND_NOT_ADDR_ID; //condition not taken
+    fs::path nojump_addr_ids = output_dir / NO_JUMP_ADDR_ID; // edges without jumps
+    fs::path unjump_addr_ids = output_dir / UNCOND_JUMP_ADDR_ID; // unconditional jumps
+
+    ifstream CondTaken_file, CondNot_file, NoJump_file, UncondJump_file;
+    
+    /*recover addresses, ids*/
+    struct stat inbuff;
+    u64 src_addr, trg_addr;
+    u32 edge_id;
+    /*     condition taken edges   */
+    if (stat(cond_addr_ids.c_str(), &inbuff) == 0){ // file  exists
+        CondTaken_file.open (cond_addr_ids.c_str()); //read file
+        if (CondTaken_file.is_open()){
+            while (CondTaken_file >> src_addr >> trg_addr >> edge_id){
+                cond_map.insert(make_pair(EDGE(src_addr, trg_addr), edge_id));
+            }
+            CondTaken_file.close();
+        }
+
+    }
+    else{
+        cout << "Please create address-ids first." <<endl;
+        return false;
+    }
+
+    /*     condition not taken edges   */
+    if (stat(condnot_addr_ids.c_str(), &inbuff) == 0){ // file  exists
+        CondNot_file.open (condnot_addr_ids.c_str()); //read file
+        if (CondNot_file.is_open()){
+            while (CondNot_file >> src_addr >> trg_addr >> edge_id){
+                condnot_map.insert(make_pair(EDGE(src_addr, trg_addr), edge_id));
+            }
+            CondNot_file.close();
+        }
+
+    }
+    else{
+        cout << "Please create address-ids first." <<endl;
+        return false;
+    }
+
+    /*    unconditional jumps  */
+    if (stat(unjump_addr_ids.c_str(), &inbuff) == 0){ // file  exists
+        UncondJump_file.open (unjump_addr_ids.c_str()); //read file
+        if (UncondJump_file.is_open()){
+            while (UncondJump_file >> src_addr >> trg_addr >> edge_id){
+                uncond_map.insert(make_pair(EDGE(src_addr, trg_addr), edge_id));
+            }
+            UncondJump_file.close();
+        }
+
+    }
+    else{
+        cout << "Please create address-ids first." <<endl;
+        return false;
+    }
+
+    /*    no jumps  */
+    if (stat(nojump_addr_ids.c_str(), &inbuff) == 0){ // file  exists
+        NoJump_file.open (nojump_addr_ids.c_str()); //read file
+        if (NoJump_file.is_open()){
+            while (NoJump_file >> src_addr >> trg_addr >> edge_id){
+                nojump_map.insert(make_pair(EDGE(src_addr, trg_addr), edge_id));
+            }
+            NoJump_file.close();
+        }
+
+    }
+    else{
+        cout << "Please create address-ids first." <<endl;
+        return false;
+    }
+
+    /* the number of pre-determined edges, map_size */
+    fs::path num_file = output_dir / NUM_EDGE_FILE;
+    ifstream NunFile;
+    if (stat(num_file.c_str(), &inbuff) == 0){ // file  exists
+        NunFile.open (num_file.c_str()); //read file
+        if (NunFile.is_open()){
+            NunFile >> max_map_size >> num_predtm;
+            NunFile.close();
+        }
+
+    }
+    else{
+        cout << "Please create num_edges.txt first." <<endl;
+        return false;
+    }
+
+    return true;
+
+}
+
+// instrument at pre-determined edges
+bool instOraclePredtm(BPatch_binaryEdit * appBin, BPatch_function * instFunc, BPatch_point * instrumentPoint, 
+                        u32 cond_id, fs::path file_marks){
+    vector<BPatch_snippet *> cond_args;
+    BPatch_constExpr CondID(cond_id);
+    cond_args.push_back(&CondID);
+    BPatch_constExpr PathMarks(file_marks.c_str());
+    cond_args.push_back(&PathMarks);
+
+    BPatch_funcCallExpr instCondExpr(*instFunc, cond_args);
+
+    BPatchSnippetHandle *handle =
+            appBin->insertSnippet(instCondExpr, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
+    if (!handle) {
+            cerr << "Failed to insert instrumention in basic block at id: " << cond_id << endl;
+            return false;
+        }
+    return true;         
+
+}
+
+
+// instrument at pre-determined edges
+bool instTracerPredtm(BPatch_binaryEdit * appBin, BPatch_function * instFunc, BPatch_point * instrumentPoint, 
+                        u32 cond_id){
+    vector<BPatch_snippet *> cond_args;
+    BPatch_constExpr CondID(cond_id);
+    cond_args.push_back(&CondID);
+
+    BPatch_funcCallExpr instCondExpr(*instFunc, cond_args);
+
+    BPatchSnippetHandle *handle =
+            appBin->insertSnippet(instCondExpr, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
+    if (!handle) {
+            cerr << "Failed to insert instrumention in basic block at id: " << cond_id << endl;
+            return false;
+        }
+    return true;         
+
+}
+
+
+// instrument at pre-determined edges
+bool instTrimmerPredtm(BPatch_binaryEdit * appBin, BPatch_function * instFunc, BPatch_point * instrumentPoint, 
+                        u32 cond_id){
+    vector<BPatch_snippet *> cond_args;
+    BPatch_constExpr CondID(cond_id);
+    cond_args.push_back(&CondID);
+
+    BPatch_funcCallExpr instCondExpr(*instFunc, cond_args);
+
+    BPatchSnippetHandle *handle =
+            appBin->insertSnippet(instCondExpr, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
+    if (!handle) {
+            cerr << "Failed to insert instrumention in basic block at id: " << cond_id << endl;
+            return false;
+        }
+    return true;         
+
+}
+
+/*
+num_all_edges: the number of all edges
+num_predtm_edges: the number of all conditional edges
+ind_addr_file: path to the file that contains (src_addr des_addr id)
+*/
+bool instOracleIndirect(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
+                BPatch_point * instrumentPoint, Dyninst::Address src_addr, u32 num_all_edges, u32 num_predtm_edges,
+                fs::path ind_addr_file, fs::path file_marks){
+    vector<BPatch_snippet *> ind_args;
+
+    BPatch_constExpr srcOffset((u64)src_addr);
+    ind_args.push_back(&srcOffset);
+    ind_args.push_back(new BPatch_dynamicTargetExpr());//target offset
+    BPatch_constExpr AllEdges(num_all_edges);
+    ind_args.push_back(&AllEdges);
+    BPatch_constExpr CondEdges(num_predtm_edges);
+    ind_args.push_back(&CondEdges);
+    BPatch_constExpr AddrIDFile(ind_addr_file.c_str());
+    ind_args.push_back(&AddrIDFile);
+    BPatch_constExpr MarksFile(file_marks.c_str());
+    ind_args.push_back(&MarksFile);
+
+
+    BPatch_funcCallExpr instIndirect(*instFunc, ind_args);
+
+    BPatchSnippetHandle *handle =
+            appBin->insertSnippet(instIndirect, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
+    
+    if (!handle) {
+            cerr << "Failed to insert instrumention in basic block at offset 0x" << hex << src_addr << endl;
+            return false;
+        }
+    return true;
+
+}
+
+
+/*
+num_all_edges: the number of all edges
+num_predtm_edges: the number of all conditional edges
+ind_addr_file: path to the file that contains (src_addr des_addr id)
+*/
+bool instTracerIndirect(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
+                BPatch_point * instrumentPoint, Dyninst::Address src_addr, u32 num_all_edges, u32 num_predtm_edges,
+                fs::path ind_addr_file){
+    vector<BPatch_snippet *> ind_args;
+
+    BPatch_constExpr srcOffset((u64)src_addr);
+    ind_args.push_back(&srcOffset);
+    ind_args.push_back(new BPatch_dynamicTargetExpr());//target offset
+    BPatch_constExpr AllEdges(num_all_edges);
+    ind_args.push_back(&AllEdges);
+    BPatch_constExpr CondEdges(num_predtm_edges);
+    ind_args.push_back(&CondEdges);
+    BPatch_constExpr AddrIDFile(ind_addr_file.c_str());
+    ind_args.push_back(&AddrIDFile);
+
+
+    BPatch_funcCallExpr instIndirect(*instFunc, ind_args);
+
+    BPatchSnippetHandle *handle =
+            appBin->insertSnippet(instIndirect, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
+    
+    if (!handle) {
+            cerr << "Failed to insert instrumention in basic block at offset 0x" << hex << src_addr << endl;
+            return false;
+        }
+    return true;
+
+}
+
+/*
+Do AFL stuff 
+*/
+bool instTrimmerIndirect(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
+                BPatch_point * instrumentPoint, Dyninst::Address src_addr){
+    vector<BPatch_snippet *> ind_args;
+
+    BPatch_constExpr srcOffset((u64)src_addr);
+    ind_args.push_back(&srcOffset);
+    ind_args.push_back(new BPatch_dynamicTargetExpr());//target offset
+    
+
+    BPatch_funcCallExpr instIndirect(*instFunc, ind_args);
+
+    BPatchSnippetHandle *handle =
+            appBin->insertSnippet(instIndirect, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
+    
+    if (!handle) {
+            cerr << "Failed to insert instrumention in basic block at offset 0x" << hex << src_addr << endl;
+            return false;
+        }
+    return true;
+
+}
+
+/*for loops: instrument at back edges */
+bool instLoops(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
+                BPatch_point * instrumentPoint){
+    vector<BPatch_snippet *> loop_args;
+
+    BPatch_funcCallExpr instLoop(*instFunc, loop_args);
+
+    BPatchSnippetHandle *handle =
+            appBin->insertSnippet(instLoop, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
+    
+    if (!handle) {
+            cerr << "Failed to insert instrumention for loop." << endl;
+            return false;
+        }
+    return true;
+}
+
+
+/*instrument at edges for one function
+    indirect_addrs: path to the file that contains (src_addr des_addr id)
+*/
+bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage, 
+                    vector < BPatch_function * >::iterator funcIter, char* funcName,
+                    fs::path output_dir){
+    
+    BPatch_basicBlock *src_bb = NULL;
+    BPatch_basicBlock *trg_bb = NULL;
+    unsigned long src_addr = 0;
+    unsigned long trg_addr = 0;
+    u32 edge_id = 0;
+
+    fs::path path_marks = output_dir / PATH_MARKS; // path to file recording marks in a program
+    fs::path indirect_addrs = output_dir / INDIRECT_ADDR_ID; //indirect edge addrs and ids
+    BPatch_function *curFunc = *funcIter;
+    BPatch_flowGraph *appCFG = curFunc->getCFG ();
+
+    BPatch_Set < BPatch_basicBlock * > allBlocks;
+    if (!appCFG->getAllBasicBlocks (allBlocks)) {
+        cerr << "Failed to find basic blocks for function " << funcName << endl;
+        return false;
+    } else if (allBlocks.size () == 0) {
+        cerr << "No basic blocks for function " << funcName << endl;
+        return false;
+    }
+
     set < BPatch_basicBlock *>::iterator bb_iter;
     for (bb_iter = allBlocks.begin (); bb_iter != allBlocks.end (); bb_iter++){
         BPatch_basicBlock * block = *bb_iter;
@@ -797,133 +660,266 @@ bool insertBBCallback(BPatch_binaryEdit * appBin, BPatch_image *appImage, vector
         Dyninst::InstructionAPI::InsnCategory category = insn.getCategory();
         Dyninst::InstructionAPI::Expression::Ptr expt = insn.getControlFlowTarget();
 
-        if(isTrimmer){ //oracle and crash don't need hash, only trimmer does
-            block_id = rand() % USHRT_MAX;
-            BPatch_point *bbEntry = (*bb_iter)->findEntryPoint();
-            if(bbEntry != NULL){
-                insertBranchID(appBin, BBCallback, bbEntry, block_id);
-            }
-            return true; // trimmer doesn't need other instrumentations-rosen
-        }
-        
-        //if(isTrimmer) return true;
-
         //conditional jumps
         vector<BPatch_edge *> outgoingEdge;
         (*bb_iter)->getOutgoingEdges(outgoingEdge);
         vector<BPatch_edge *>::iterator edge_iter;
 
+        std::unordered_map<EDGE, u32, HashEdge>::iterator itdl;
+
         for(edge_iter = outgoingEdge.begin(); edge_iter != outgoingEdge.end(); ++edge_iter) {
-            /*get the starting addresses of source and target blocks of this edge*/
-            // BPatch_basicBlock * src_block = (*edge_iter)->getSource();
-            BPatch_basicBlock * des_block = (*edge_iter)->getTarget();
-            // unsigned long src_block_addr = src_block->getStartAddress();
-            unsigned long des_block_addr = des_block->getStartAddress();
-            //unsigned short branch_id = calcBitmapID(src_block_addr, des_block_addr);
-            
-            //insert for new coverage
-            // ||(*edge_iter)->getType() == NonJump
-            // (*edge_iter)->getType() == UncondJump
-            /* the addresses in condition-taken path includes 
-             *conditional jump(taken), unconditional jump, no jump */
+            src_bb = (*edge_iter)->getSource();
+            trg_bb = (*edge_iter)->getTarget();
+            src_addr = src_bb->getStartAddress();
+            trg_addr = trg_bb->getStartAddress();
+
             if ((*edge_iter)->getType() == CondJumpTaken){
-                if (!isInstrumented(addr, TYPE_CTAKEN)){
-                    instrumentCondJump(appBin, ConditionJump, (*edge_iter)->getPoint(), addr, des_block_addr, condTakenPath, markTakenPath);
+                itdl = cond_map.find(EDGE(src_addr, trg_addr));
+                if (itdl != cond_map.end()){
+                    edge_id = (*itdl).second;
+                }
+                else {
+                    cout << "CondJumpTaken could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
+                    return false;
                 }
 
                 if (isOracle){
-                        if (isMarks(addr, TYPE_CTAKEN)){
-                        instrumentCondMarks(appBin, ConditionMark, (*edge_iter)->getPoint(), addr, des_block_addr);
-                    }
+                    if (!instOraclePredtm(appBin, OraclePredtm, (*edge_iter)->getPoint(), edge_id, path_marks))
+                        cout << "Pre-determined edges instrument error." << endl;
+                }
+                else if (isTracer){
+                    if (!instTracerPredtm(appBin, TracerPredtm, (*edge_iter)->getPoint(), edge_id))
+                        cout << "Pre-determined edges instrument error." << endl;
+                }
+                else if (isTrimmer){
+                    if (!instTrimmerPredtm(appBin, TrimmerPredtm, (*edge_iter)->getPoint(), edge_id))
+                        cout << "Pre-determined edges instrument error." << endl;
+                    
                 }
                 
-
             }
             else if ((*edge_iter)->getType() == CondJumpNottaken){
-               
-                if (!isInstrumented(addr, TYPE_NCTAKEN)){
-                    instrumentCondJump(appBin, ConditionJump, (*edge_iter)->getPoint(), addr, des_block_addr, condNotPath, markNotPath);
+                itdl = condnot_map.find(EDGE(src_addr, trg_addr));
+                if (itdl != condnot_map.end()){
+                    edge_id = (*itdl).second;
+                }
+                else {
+                    cout << "CondJumpNottaken could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
+                    return false;
                 }
 
                 if (isOracle){
-                    if (isMarks(addr, TYPE_NCTAKEN)){
-                        instrumentCondMarks(appBin, ConditionMark, (*edge_iter)->getPoint(), addr, des_block_addr);
-                    }
+                    if (!instOraclePredtm(appBin, OraclePredtm, (*edge_iter)->getPoint(), edge_id, path_marks))
+                        cout << "Pre-determined edges instrument error." << endl;
+                }
+                else if (isTracer){
+                    if (!instTracerPredtm(appBin, TracerPredtm, (*edge_iter)->getPoint(), edge_id))
+                        cout << "Pre-determined edges instrument error." << endl;
+                }
+                else if (isTrimmer){
+                    if (!instTrimmerPredtm(appBin, TrimmerPredtm, (*edge_iter)->getPoint(), edge_id))
+                        cout << "Pre-determined edges instrument error." << endl;
+                    
                 }
                 
-                
+            } 
+            else if ((*edge_iter)->getType() == UncondJump){
+                itdl = uncond_map.find(EDGE(src_addr, trg_addr));
+                if (itdl != uncond_map.end()){
+                    edge_id = (*itdl).second;
+                }
+                else {
+                    cout << "UncondJump could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
+                    return false;
+                }
+
+                if (isOracle){
+                    if (!instOraclePredtm(appBin, OraclePredtm, (*edge_iter)->getPoint(), edge_id, path_marks))
+                        cout << "Pre-determined edges instrument error." << endl;
+                }
+                else if (isTracer){
+                    if (!instTracerPredtm(appBin, TracerPredtm, (*edge_iter)->getPoint(), edge_id))
+                        cout << "Pre-determined edges instrument error." << endl;
+                }
+                else if (isTrimmer){
+                    if (!instTrimmerPredtm(appBin, TrimmerPredtm, (*edge_iter)->getPoint(), edge_id))
+                        cout << "Pre-determined edges instrument error." << endl;
+                    
+                }
             }
-            // else if ((*edge_iter)->getType() == UncondJump){
-             
-            //     if (!isInstrumented(addr, TYPE_CTAKEN)){
-            //         instrumentCondJump(appBin, ConditionJump, (*edge_iter)->getPoint(), addr, des_block_addr, condTakenPath,markTakenPath);
-            //     }
-            // }
-            // else if ((*edge_iter)->getType() == NonJump){
-               
-            //     if (!isInstrumented(addr, TYPE_CTAKEN)){
-            //         instrumentCondJump(appBin, ConditionJump, (*edge_iter)->getPoint(), addr, des_block_addr, condTakenPath,markTakenPath);
-            //     }
-            // }                    
+            else if ((*edge_iter)->getType() == NonJump){
+                itdl = nojump_map.find(EDGE(src_addr, trg_addr));
+                if (itdl != nojump_map.end()){
+                    edge_id = (*itdl).second;
+                }
+                else {
+                    cout << "NonJump could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
+                    return false;
+                }
+
+                if (isOracle){
+                    if (!instOraclePredtm(appBin, OraclePredtm, (*edge_iter)->getPoint(), edge_id, path_marks))
+                        cout << "Pre-determined edges instrument error." << endl;
+                }
+                else if (isTracer){
+                    if (!instTracerPredtm(appBin, TracerPredtm, (*edge_iter)->getPoint(), edge_id))
+                        cout << "Pre-determined edges instrument error." << endl;
+                }
+                else if (isTrimmer){
+                    if (!instTrimmerPredtm(appBin, TrimmerPredtm, (*edge_iter)->getPoint(), edge_id))
+                        cout << "Pre-determined edges instrument error." << endl;
+                    
+                }
+                
+            }              
             
         }
 
-        //indirect jumps
+        //indirect edges
         for(Dyninst::InstructionAPI::Instruction::cftConstIter iter = insn.cft_begin(); iter != insn.cft_end(); ++iter) {
             if(iter->isIndirect) {
                 
-                if(category == Dyninst::InstructionAPI::c_CallInsn) {
+                if(category == Dyninst::InstructionAPI::c_CallInsn) {//indirect call
                     vector<BPatch_point *> callPoints;
                     appImage->findPoints(addr, callPoints);
-                    
-                    vector<BPatch_point *>::iterator callPt_iter;
-                    for(callPt_iter = callPoints.begin(); callPt_iter != callPoints.end(); ++callPt_iter) {
-                        
-                        instrumentIndirectJump(appBin, IndirectBranch, *callPt_iter, addr, IndCallPath, markCallPath, TYPE_CALL);                         
+
+                    if (isOracle){
+                        if (!instOracleIndirect(appBin, OracleIndirect, callPoints[0], addr, max_map_size, num_predtm, indirect_addrs, path_marks))
+                                cout << "Indirect instrument error." << endl;
                     }
+                    else if (isTracer){
+                        if (!instTracerIndirect(appBin, TracerIndirect, callPoints[0], addr, max_map_size, num_predtm, indirect_addrs))
+                                cout << "Indirect instrument error." << endl;
+                    }
+                    else if (isTrimmer){
+                        if (!instTrimmerIndirect(appBin, TrimmerIndirect, callPoints[0], addr))
+                                cout << "Indirect instrument error." << endl;
+                    }
+                    
+                    // vector<BPatch_point *>::iterator callPt_iter;
+                    // for(callPt_iter = callPoints.begin(); callPt_iter != callPoints.end(); ++callPt_iter) {
+                        
+                    //     instOracleIndirect(appBin, OracleIndirect, *callPt_iter, addr, max_map_size, num_predtm, indirect_addrs);                       
+                    // }
+                    
                 }
                 
-                else if(category == Dyninst::InstructionAPI::c_BranchInsn) {
+                else if(category == Dyninst::InstructionAPI::c_BranchInsn) {//indirect jump
                     vector<BPatch_point *> jmpPoints;
                     appImage->findPoints(addr, jmpPoints);
                     
-                    vector<BPatch_point *>::iterator jmpPt_iter;
-                    for(jmpPt_iter = jmpPoints.begin(); jmpPt_iter != jmpPoints.end(); ++jmpPt_iter) {
-                        
-                        instrumentIndirectJump(appBin, IndirectBranch, *jmpPt_iter, addr, IndJumpPath, markJumpPath, TYPE_JUMP);
+                    if (isOracle){
+                        if (!instOracleIndirect(appBin, OracleIndirect, jmpPoints[0], addr, max_map_size, num_predtm, indirect_addrs, path_marks))
+                            cout << "Indirect instrument error." << endl;
                     }
+                    else if (isTracer){
+                        if (!instTracerIndirect(appBin, TracerIndirect, jmpPoints[0], addr, max_map_size, num_predtm, indirect_addrs))
+                                cout << "Indirect instrument error." << endl;
+                    }
+                    else if (isTrimmer){
+                        if (!instTrimmerIndirect(appBin, TrimmerIndirect, jmpPoints[0], addr))
+                                cout << "Indirect instrument error." << endl;
+                    }
+                    
+                    // vector<BPatch_point *>::iterator jmpPt_iter;
+                    // for(jmpPt_iter = jmpPoints.begin(); jmpPt_iter != jmpPoints.end(); ++jmpPt_iter) {
+                    //     instOracleIndirect(appBin, OracleIndirect, *jmpPt_iter, addr, max_map_size, num_predtm, indirect_addrs);
+                    // }
                 }
-                // //"return" is actually an indirect call
-                // else if(category == Dyninst::InstructionAPI::c_ReturnInsn) {
-                //     vector<BPatch_point *> retPoints;
-                //     appImage->findPoints(addr, retPoints);
+                // 
+                else if(category == Dyninst::InstructionAPI::c_ReturnInsn) {
+                    vector<BPatch_point *> retPoints;
+                    appImage->findPoints(addr, retPoints);
 
-                //     vector<BPatch_point *>::iterator retPt_iter;
-                //     for(retPt_iter = retPoints.begin(); retPt_iter != retPoints.end(); ++retPt_iter) {
-                //         instrumentIndirectJump(appBin, IndirectBranch, *retPt_iter, addr, IndCallPath, markCallPath, TYPE_CALL);
-                //     }
-                // }
+                    if (isOracle){
+                        if (!instOracleIndirect(appBin, OracleIndirect, retPoints[0], addr, max_map_size, num_predtm, indirect_addrs, path_marks))
+                                cout << "Indirect instrument error." << endl;
+                    }
+                    else if (isTracer){
+                        if (!instTracerIndirect(appBin, TracerIndirect, retPoints[0], addr, max_map_size, num_predtm, indirect_addrs))
+                                cout << "Indirect instrument error." << endl;
+                    }
+                    else if (isTrimmer){
+                        if (!instTrimmerIndirect(appBin, TrimmerIndirect, retPoints[0], addr))
+                                cout << "Indirect instrument error." << endl;
+                    }
+                    
+                    // vector<BPatch_point *>::iterator retPt_iter;
+                    // for(retPt_iter = retPoints.begin(); retPt_iter != retPoints.end(); ++retPt_iter) {
+                    //      if (instOracleIndirect(appBin, OracleIndirect, *retPt_iter, addr, max_map_size, num_predtm, indirect_addrs, path_marks))
+                    //             cout << "Indirect instrument error." << endl;
+                    // }
+                }
+ 
             }
         }
+    }
+
+    if (isTracer){
+        /* instrument at loops, in tracer */
+        std::vector< BPatch_basicBlockLoop* > allLoops;
+        appCFG->getLoops(allLoops);
+
+        if (allLoops.size () != 0) {
+            for (auto loop_iter = allLoops.begin(); loop_iter != allLoops.end(); ++ loop_iter){
+                std::vector<BPatch_edge *> back_edges;
+                (*loop_iter)->getBackEdges(back_edges);
+                if (!instLoops(appBin, TracerLoops, back_edges[0]->getPoint())) cout << "Instrument loops failed"<<endl;
+            }
+        }
+    }
+    
+    return true;
+}
+
+/* insert forkserver at the beginning of main
+    funcInit: function to be instrumented, i.e., main
+
+*/
+
+bool insertForkServer(BPatch_binaryEdit * appBin, BPatch_function * instIncFunc,
+                         BPatch_function *funcInit, u32 num_predtm_edges, fs::path marks_file, fs::path ind_addr_file){
+
+    /* Find the instrumentation points */
+    vector < BPatch_point * >*funcEntry = funcInit->findPoint (BPatch_entry);
+
+    if (NULL == funcEntry) {
+        cerr << "Failed to find entry for function. " <<  endl;
+        return false;
+    }
+
+    //cout << "Inserting init callback." << endl;
+    BPatch_Vector < BPatch_snippet * >instArgs; 
+    BPatch_constExpr NumCond(num_predtm_edges);
+    instArgs.push_back(&NumCond);
+    
+    BPatch_constExpr MARKIDFile(marks_file.c_str());
+    instArgs.push_back(&MARKIDFile);
+    BPatch_constExpr AddrIDFile(ind_addr_file.c_str());
+    instArgs.push_back(&AddrIDFile);
+
+    BPatch_funcCallExpr instIncExpr(*instIncFunc, instArgs);
+
+    /* Insert the snippet at function entry */
+    BPatchSnippetHandle *handle =
+        appBin->insertSnippet (instIncExpr, *funcEntry, BPatch_callBefore, BPatch_firstSnippet);
+    if (!handle) {
+        cerr << "Failed to insert init callback." << endl;
+        return false;
     }
     return true;
 }
 
+int main (int argc, char **argv){
 
-
-
-int main (int argc, char **argv)
-{
-    if(!parseOptions(argc,argv)) {
+     if(!parseOptions(argc,argv)) {
         return EXIT_FAILURE;
     }
 
-    fs::path out_dir (reinterpret_cast<const char*>(branch_dir)); // files for jump/call addresses
-
-
-    if (NULL==opendir(out_dir.c_str())){
-        mkdir(out_dir.c_str(),0777);
-    }
+    fs::path out_dir (reinterpret_cast<const char*>(csifuzz_dir)); // files for csifuzz results
+    
+    fs::path indi_addr_id_file = out_dir / INDIRECT_ADDR_ID; //indirect edge addrs and ids
+    fs::path marks_file = out_dir / PATH_MARKS;
 
     /* start instrumentation*/
     BPatch bpatch;
@@ -934,15 +930,6 @@ int main (int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    if(!instrumentLibraries.empty()){
-        for(auto lbit = instrumentLibraries.begin(); lbit != instrumentLibraries.end(); lbit++){
-            if (!appBin->loadLibrary ((*lbit).c_str())) {
-                cerr << "Failed to open instrumentation library " << *lbit << endl;
-                cerr << "It needs to be located in the current working directory." << endl;
-                return EXIT_FAILURE;
-            }
-        }
-    }
 
     BPatch_image *appImage = appBin->getImage ();
 
@@ -956,45 +943,102 @@ int main (int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    
     initAflForkServer = findFuncByName (appImage, (char *) "initAflForkServer");
-    IndirectBranch = findFuncByName (appImage, (char *) "IndirectBranch");
-    
-    
-    //indirect addresses pairs
-    getIndAddrs = findFuncByName (appImage, (char *) "getIndirectAddrs");
-    clearMaps = findFuncByName (appImage, (char *) "clearMultimaps");
-    
+ 
     //conditional jumps
-    ConditionJump = findFuncByName (appImage, (char *) "ConditionJump");
-    BBCallback =  findFuncByName (appImage, (char *) "BBCallback");
-    ConditionMark = findFuncByName (appImage, (char *) "ConditionMark");
+    OraclePredtm = findFuncByName (appImage, (char *) "OraclePredtm");
+    OracleIndirect = findFuncByName (appImage, (char *) "OracleIndirect");
+    TracerPredtm = findFuncByName (appImage, (char *) "TracerPredtm");
+    TracerIndirect = findFuncByName (appImage, (char *) "TracerIndirect");
+    TrimmerIndirect = findFuncByName (appImage, (char *) "TrimmerIndirect");
+    TracerLoops = findFuncByName (appImage, (char *) "TracerLoops");
+    TrimmerPredtm = findFuncByName (appImage, (char *) "TrimmerPredtm");
+    //BBCallback =  findFuncByName (appImage, (char *) "BBCallback");
+    //ConditionMark = findFuncByName (appImage, (char *) "ConditionMark");
     
+    //atMainExit = findFuncByName (appImage, (char *) "atMainExit");
 
-    atMainExit = findFuncByName (appImage, (char *) "atMainExit");
 
-
-    if (!initAflForkServer || !ConditionJump || !IndirectBranch || !ConditionMark
-        || !getIndAddrs || !clearMaps || !BBCallback || !atMainExit) {
+    if (!initAflForkServer || !OraclePredtm || !OracleIndirect
+         || !TracerPredtm || !TracerIndirect || !TracerLoops 
+         || !TrimmerPredtm || !TrimmerIndirect) {
         cerr << "Instrumentation library lacks callbacks!" << endl;
         return EXIT_FAILURE;
     }
 
-    
-    /*reading files containing addresses, and skip those addresses while instrumentation*/
-    
-    dealAddressFiles(out_dir);
 
+    /* count the number of edges for the length of hash table
+    1. num_c = the number of conditional edges
+    2. num_i = the number of indirect call/jump sites
+    3. length of hash table = num_c + num_i
+    */
+   if (isPrep){
+       fs::path num_file = out_dir / NUM_EDGE_FILE; // out_dir: csifuzz outputs; max edges
+       // iterate over all functions to count edges
+        num_predtm = 0;
+        num_indirect = 0;
+        max_map_size = 0;
+        for (auto countIter = allFunctions.begin (); countIter != allFunctions.end (); ++countIter) {
+            BPatch_function *countFunc = *countIter;
+            char funcName[1024];
+            countFunc->getName (funcName, 1024);
+            
+            if(isSkipFuncs(funcName)) continue;
+            //count edges
+            if(!count_edges(appBin, appImage, countIter, funcName, out_dir)) 
+                                cout << "Empty function" << funcName << endl;      
+        }
+
+        // fuzzer gets the number of edges by saved file
+        
+        u32 num_tpm = num_predtm + num_indirect * BASE_INDIRECT;
+        u16 num_exp = (u16)ceil( log(num_tpm) / log(2) );
+        // be general with the shared memory
+        if(num_exp < MAP_SIZE_POW2) num_exp = MAP_SIZE_POW2;
+
+
+        max_map_size = (1 << num_exp);
+        
+        ofstream numedges;
+        numedges.open (num_file.c_str(), ios::out | ios::app | ios::binary); //write file
+        if(numedges.is_open()){
+            numedges << max_map_size << " " << num_predtm << endl; 
+            //numedges << num_indirect << endl;
+        }
+        numedges.close();    
+        //TODO: fuzzer gets the values through pipe (or shared memory?)?
+        return EXIT_SUCCESS; 
+   }
+   
+   // read address-ids from files
+    if(!readAddrs(out_dir)) {
+        cout << "Fail to read addresses." << endl;
+        return EXIT_FAILURE;
+    }
+
+   /* instrument edges
+   1. insert at conditional edges, like afl
+   2.  insert at indirect edges, and compare edges dynamically:
+        1) the first id of an indirect edge is the number of conditional edges num_c
+        2) use map to maintain [(src_addr, des_addr), id]
+        3) at the beginning of main, insert a global map to load [(src_addr, des_addr), id]
+        4) at each indirect edge, when meeting a new indirect edge, write the [(src_addr, des_addr), id] 
+            into a file to record them; it can be reused if fuzzing stops accidently
+    */
     vector < BPatch_function * >::iterator funcIter;
-    // iterate over all functions
     for (funcIter = allFunctions.begin (); funcIter != allFunctions.end (); ++funcIter) {
         BPatch_function *curFunc = *funcIter;
         char funcName[1024];
         curFunc->getName (funcName, 1024);
-        if(!insertBBCallback(appBin, appImage, funcIter, funcName, out_dir)) return EXIT_FAILURE;        
+        if(isSkipFuncs(funcName)) continue;
+        //instrument at edges
+        if (!edgeInstrument(appBin, appImage, funcIter, funcName, out_dir)) {
+            cout << "fail to instrument function: " << funcName << endl;
+            // return EXIT_FAILURE;
+            }
+
     }
 
-    //insert function initAflForkServer at the entry of main
     BPatch_function *funcToPatch = NULL;
     BPatch_Vector<BPatch_function*> funcs;
     
@@ -1005,113 +1049,26 @@ int main (int argc, char **argv)
     }
     // there should really be only one
     funcToPatch = funcs[0];
-  
-    if(!funcToPatch) {
-        cerr << "Couldn't locate function at given entry point. "<< endl;
-        return EXIT_FAILURE;
-    }
 
-    /* remove instrumentations before main */
-    if (mainExit){
-        if(!insertCallToMainEE(appBin, atMainExit, funcToPatch)){
-            cerr << "Could not insert init callback at main." << endl;
-            return EXIT_FAILURE;
-        }
-        // Output the instrumented binary
-        if (!appBin->writeFile (instrumentedBinary)) {
-            cerr << "Failed to write output file: " << instrumentedBinary << endl;
-            return EXIT_FAILURE;
-        }
-        return 0;
-    }
-
-    if(!insertCallToMainEE (appBin,  initAflForkServer, funcToPatch)){
+    if(!insertForkServer (appBin, initAflForkServer, funcToPatch, num_predtm, marks_file, indi_addr_id_file)){
         cerr << "Could not insert init callback at main." << endl;
         return EXIT_FAILURE;
     }
-    if(!insertAddrsToInit (appBin,  getIndAddrs, funcToPatch, out_dir)){
-        cerr << "Could not insert init callback at main." << endl;
-        return EXIT_FAILURE;
-    }
-    // at the end of main function, insert function to clear multimaps
-    if(!insertCallToMainExit (appBin,  clearMaps, funcToPatch)){
-        cerr << "Could not insert main exit callback at main." << endl;
-        return EXIT_FAILURE;
-    }
-
-    // at the end of main function, insert function to clear multimaps
-    // BPatch_Vector<BPatch_function*> funcs_fini;
-    // BPatch_function *finiToPatch = NULL;
-
-    // appImage->findFunction("main",funcs_fini);
-    // if(!funcs_fini.size()) {
-    //         cerr << "Couldn't locate main. "<< endl;
-    //         return EXIT_FAILURE;
-    //     }
-    //     // there should really be only one
-    // finiToPatch = funcs_fini[0];
-    // if(!finiToPatch) {
-    //     cerr << "Couldn't locate function main at given binary. "<< endl;
-    //     return EXIT_FAILURE;
-    // }
-    
-    // if(!insertCallToMainExit (appBin,  clearMaps, finiToPatch)){
-    //     cerr << "Could not insert main callback at given point." << endl;
-    //     return EXIT_FAILURE;
-    // }
 
     if(verbose){
         cout << "Saving the instrumented binary to " << instrumentedBinary << "..." << endl;
     }
-    // Output the instrumented binary
+    // save the instrumented binary
     if (!appBin->writeFile (instrumentedBinary)) {
         cerr << "Failed to write output file: " << instrumentedBinary << endl;
         return EXIT_FAILURE;
     }
-
-    /* for runtime libraries that are manually pointed */
-    if(!runtimeLibraries.empty()) {
-        cout << "Instrumenting runtime libraries." << endl;
-        set<string>::iterator rtLibIter ;
-        for(rtLibIter = runtimeLibraries.begin(); rtLibIter != runtimeLibraries.end(); rtLibIter++) {
-            BPatch_binaryEdit *libBin = bpatch.openBinary ((*rtLibIter).c_str(), false);
-            if (libBin == NULL) {
-                cerr << "Failed to open binary "<< *rtLibIter << endl;
-                return EXIT_FAILURE;
-            }
-            
-            BPatch_image *libImg = libBin->getImage ();
-            vector < BPatch_function * > libFunctions;
-            libImg->getProcedures(libFunctions);
-
-            libBin->loadLibrary (instLibrary);
-            vector < BPatch_function * >::iterator funcIter;
-            // iterate over all functions
-            for (funcIter = libFunctions.begin (); funcIter != libFunctions.end ();
-                    ++funcIter) {
-                BPatch_function *curFunc = *funcIter;
-                char funcName[1024];
-                curFunc->getName (funcName, 1024);
-                if (!insertBBCallback(libBin, libImg, funcIter, funcName, out_dir)) return EXIT_FAILURE;
-            }
-         
-            if (!libBin->writeFile ((*rtLibIter + ".ins").c_str())) {
-                cerr << "Failed to write output file: " <<(*rtLibIter + ".ins").c_str() << endl;
-                return EXIT_FAILURE;
-            } else {
-                if(verbose){
-                    cout << "Saved the instrumented library to " << (*rtLibIter + ".ins").c_str() << "." << endl;
-                }
-            }
-        }
-    }
-
-    clearAddrMaps();
 
     if(verbose){
         cout << "All done! Happy fuzzing!" << endl;
     }
 
     return EXIT_SUCCESS;
+
 
 }
