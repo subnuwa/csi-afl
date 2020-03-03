@@ -8,6 +8,8 @@
 
 #define INDIRECT_ADDR_ID "indirect_addr_ids.txt"
 
+#define BLOCK_ADDR_ID       "block_addr_ids.txt"
+
 //mark file for pre-determined edges
 #define PATH_MARKS "path_marks.txt"
 // mark file for indirect edges
@@ -18,12 +20,20 @@
 #define SIZE_CKSUM_PATH         (1 << 7)
 #define BYTES_CKSUM_PATH        (4 * SIZE_CKSUM_PATH)
 
-//bytes for recording the flags of loops
+//byte for recording the flags of loops
 #define FLAG_LOOP   1
+
+// byte for record exit code COND_COVERAGE or INDIRECT_COVERAGE
+#define BYTE_EXIT       1
 
 // give loops more air time
 #define LOOP_TIME   8
 
+// flags to record examined edges
+#define BYTES_FLAGS     (1 << 19)
+
 
 #define COND_COVERAGE 66 //exit(COND_COVERAGE), conditional jump
 #define INDIRECT_COVERAGE 67  //indirect jump/call
+
+

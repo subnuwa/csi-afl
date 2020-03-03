@@ -313,10 +313,8 @@
    problems with complex programs). You need to recompile the target binary
    after changing this - otherwise, SEGVs may ensue. */
 
-#define MAP_SIZE_POW2       16
+#define MAP_SIZE_POW2       18
 #define MAP_SIZE            (1 << MAP_SIZE_POW2)
-/*Cofree def 16bits: 0xffff*/
-//#define KEEP_LOW            (MAP_SIZE -1)
 
 
 /* Maximum allocator request size (keep well under INT_MAX): */

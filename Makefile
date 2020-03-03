@@ -21,10 +21,10 @@
 
 # var- edit DYN_ROOT accordingly
 
-DYN_ROOT 	= /home/xgzhu/apps/buildDyn
+DYN_ROOT 	= /home/xgzhu/apps/dyninstShadow/thirdparty/dyninst-10.1.0/install
 # These should point to where libelf and libdwarf are installed
-LOCAL_INC = /usr/local/include
-LOCAL_LIBS = /usr/local/lib
+# LOCAL_INC = /usr/local/include
+# LOCAL_LIBS = /usr/local/lib
 # TBB_INC = $(DYN_ROOT)/tbb/include
 DYNINST_INCLUDE = $(DYN_ROOT)/include
 DYNINST_LIB =  $(DYN_ROOT)/lib
@@ -33,15 +33,15 @@ CC 			= gcc
 CXX 		= g++
 CXXFLAGS 	= -g -Wall -O3 -std=c++11
 LIBFLAGS 	= -fpic -shared
-LDFLAGS 	= -I/usr/include -I$(DYNINST_INCLUDE) -I$(LOCAL_INC) -L$(DYNINST_LIB) -L$(LOCAL_LIBS)\
+LDFLAGS 	= -I$(DYNINST_INCLUDE)  -L$(DYNINST_LIB) \
 					-lcommon -liberty -ldyninstAPI -lboost_system -linstructionAPI -lstdc++fs
-# -I$(TBB_INC)
+# -I$(TBB_INC) -I$(LOCAL_INC) -L$(LOCAL_LIBS) -I/usr/include
 
 
 
 ##################################################################
 
-PROGNAME    = afl
+PROGNAME    = csi-afl
 VERSION     = $(shell grep '^\#define VERSION ' config.h | cut -d '"' -f2)
 
 PREFIX     ?= /usr/local

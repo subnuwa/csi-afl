@@ -1,6 +1,3 @@
-/* 
-    Tracer has to re-run each time because it needs to update makrs and indirect ids for the later instrumentations
-*/
 
 
 #include <cstdlib>
@@ -50,6 +47,8 @@ std::set<u32> all_path_marks,   //all marks in the program
                 cksum_path_marks; // for sorting path cksum; all elements are marks in a path
 
 
+
+
 /* 
     max_predtm: the largest number of pre-determined edges
     indirect_file: this file is used when afl wants to re-run the target and use previous results;
@@ -60,6 +59,7 @@ void initAflForkServer(u32 max_predtm, const char* marks_file, const char* indir
     /* start fork */
     int temp_data;
     pid_t fork_pid;
+    
 
     /* Set up the SHM bitmap. */
     char *shm_env_var = getenv(SHM_ENV_VAR);
@@ -72,7 +72,7 @@ void initAflForkServer(u32 max_predtm, const char* marks_file, const char* indir
     if(trace_bits == (u8*)-1) {
         perror("shmat");
         return;
-    }
+    }    
 
     /* for calculating path ids */
     //u32 path_id;
@@ -132,7 +132,8 @@ void initAflForkServer(u32 max_predtm, const char* marks_file, const char* indir
             return;
             
         }
-
+        
+        trace_bits[MAP_SIZE + BYTES_FLAGS + BYTES_CKSUM_PATH + FLAG_LOOP] = 255; //reset it
         /* Parent - Fork off worker process that actually runs the benchmark. */
         fork_pid = fork();
         if(fork_pid < 0) {
@@ -187,16 +188,17 @@ void OraclePredtm(u32 predtm_id, const char* marks_file){
                 marks_io << predtm_id << endl; // use edge id as the mark id
                 marks_io.close();
             }
+            trace_bits[MAP_SIZE + BYTES_FLAGS + BYTES_CKSUM_PATH + FLAG_LOOP] = COND_COVERAGE;
             exit(COND_COVERAGE);
         }
         
         // examined
-        //trace_bits[predtm_id]++; //set but not used for tracing
+        trace_bits[predtm_id]++; //set but not used for tracing
 
         if (all_path_marks.count(predtm_id)){ // this edge id has been marked
             if (!cksum_path_marks.count(predtm_id)){ //not in; write to shared memory
                 cksum_path_marks.insert(predtm_id); // insert the id for calculating path cksum
-                u32 *trace32 = (u32*)(trace_bits + 2 * MAP_SIZE); // point to the memory of path checksum
+                u32 *trace32 = (u32*)(trace_bits + MAP_SIZE + BYTES_FLAGS); // point to the memory of path checksum
                 int i = 0;
                 for (auto insert_iter = cksum_path_marks.begin(); insert_iter!= cksum_path_marks.end(); ++insert_iter){
                     trace32[i] = *insert_iter;
@@ -221,7 +223,7 @@ void TracerPredtm(u32 predtm_id){
         if (all_path_marks.count(predtm_id)){ // this edge id has been marked
             if (!cksum_path_marks.count(predtm_id)){ //not in; write to shared memory
                 cksum_path_marks.insert(predtm_id); // insert the id for calculating path cksum
-                u32 *trace32 = (u32*)(trace_bits + 2 * MAP_SIZE); // point to the memory of path checksum
+                u32 *trace32 = (u32*)(trace_bits + MAP_SIZE + BYTES_FLAGS); // point to the memory of path checksum
                 int i = 0;
                 for (auto insert_iter = cksum_path_marks.begin(); insert_iter!= cksum_path_marks.end(); ++insert_iter){
                     trace32[i] = *insert_iter;
@@ -256,12 +258,12 @@ void OracleIndirect(u64 src_addr, u64 des_addr, u32 max_map_size, u32 max_predtm
         if (indirect_ids.count(EDGE(src_addr, des_addr))){ // already exist
             auto itdl = indirect_ids.find(EDGE(src_addr, des_addr));
             u32 inID = (*itdl).second;
-            //trace_bits[(*itdl).second] ++; //set but not used for tracing
+            trace_bits[inID] ++; //set but not used for tracing
 
             if (all_path_marks.count(inID)){ // this edge id has been marked
                 if (!cksum_path_marks.count(inID)){ //not in; write to shared memory
                     cksum_path_marks.insert(inID); // insert the id for calculating path cksum
-                    u32 *trace32 = (u32*)(trace_bits + 2 * MAP_SIZE); // point to the memory of path checksum
+                    u32 *trace32 = (u32*)(trace_bits + MAP_SIZE + BYTES_FLAGS); // point to the memory of path checksum
                     int i = 0;
                     for (auto insert_iter = cksum_path_marks.begin(); insert_iter!= cksum_path_marks.end(); ++insert_iter){
                         trace32[i] = *insert_iter;
@@ -275,7 +277,11 @@ void OracleIndirect(u64 src_addr, u64 des_addr, u32 max_map_size, u32 max_predtm
 
     }
     
-    
+    /* in case the target program fork a new child */
+    u8 ec = trace_bits[MAP_SIZE + BYTES_FLAGS + BYTES_CKSUM_PATH + FLAG_LOOP];
+    if (ec == INDIRECT_COVERAGE || ec == COND_COVERAGE){
+        return;
+    }
     /* indirect edge does not exist --> find a new indirect edge;*/
 
     // in case some instrumentation of indirect edges are before forkserver
@@ -286,13 +292,13 @@ void OracleIndirect(u64 src_addr, u64 des_addr, u32 max_map_size, u32 max_predtm
     if (cur_max_id >= max_map_size) cur_max_id = max_map_size - 1; //don't overflow
 
     indirect_ids.insert(make_pair(EDGE(src_addr, des_addr), cur_max_id));
-    // //save new edge into a file, for recovering fuzzing
-    // ofstream indaddrs;
-    // indaddrs.open (indirect_file, ios::out | ios::app | ios::binary); //write file
-    // if(indaddrs.is_open()){
-    //     indaddrs << src_addr << " " << des_addr << " " << cur_max_id << endl; 
-    //     indaddrs.close();
-    // }
+    //save new edge into a file, for recovering fuzzing
+    ofstream indaddrs;
+    indaddrs.open (indirect_file, ios::out | ios::app | ios::binary); //write file
+    if(indaddrs.is_open()){
+        indaddrs << src_addr << " " << des_addr << " " << cur_max_id << endl; 
+        indaddrs.close();
+    }
 
     // save the path mark to file
     ofstream marks_io (marks_file, ios::out | ios::app | ios::binary);
@@ -301,6 +307,7 @@ void OracleIndirect(u64 src_addr, u64 des_addr, u32 max_map_size, u32 max_predtm
         marks_io.close();
     }
 
+    trace_bits[MAP_SIZE + BYTES_FLAGS + BYTES_CKSUM_PATH + FLAG_LOOP] = INDIRECT_COVERAGE;
     exit(INDIRECT_COVERAGE);    
     
 }
@@ -323,7 +330,7 @@ void TracerIndirect(u64 src_addr, u64 des_addr, u32 max_map_size, u32 max_predtm
                 if (all_path_marks.count(inID)){ // this edge id has been marked
                     if (!cksum_path_marks.count(inID)){ //not in; write to shared memory
                         cksum_path_marks.insert(inID); // insert the id for calculating path cksum
-                        u32 *trace32 = (u32*)(trace_bits + 2 * MAP_SIZE); // point to the memory of path checksum
+                        u32 *trace32 = (u32*)(trace_bits + MAP_SIZE + BYTES_FLAGS); // point to the memory of path checksum
                         int i = 0;
                         for (auto insert_iter = cksum_path_marks.begin(); insert_iter!= cksum_path_marks.end(); ++insert_iter){
                             trace32[i] = *insert_iter;
@@ -353,8 +360,8 @@ void TracerIndirect(u64 src_addr, u64 des_addr, u32 max_map_size, u32 max_predtm
     if(trace_bits) {
         trace_bits[cur_max_id]++;
     }
-    //save new edge into a file, for recovering fuzzing
 
+    //save new edge into a file, for recovering fuzzing
     ofstream indaddrs;
     indaddrs.open (indirect_file, ios::out | ios::app | ios::binary); //write file
     if(indaddrs.is_open()){
@@ -390,6 +397,11 @@ void TrimmerIndirect(u64 src_addr, u64 des_addr){
    indicate there exists a loop
 */
 void TracerLoops(){
-    trace_bits[2 * MAP_SIZE + BYTES_CKSUM_PATH] = 1; //loop flag; it's a loop
+    trace_bits[MAP_SIZE + BYTES_FLAGS + BYTES_CKSUM_PATH] = 1; //loop flag; it's a loop
 }
+
+
+
+
+
 

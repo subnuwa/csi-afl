@@ -1,11 +1,3 @@
-/*
-TODO:
-1. first, assign ids to conditonal edges, and save (addr1, addr2, id) to a file;
-    two files: condition-taken addrs, and condition-not-taken addrs;
-    this ensures the ids are assigned identically;
-2. instrument oracle
-3. instrument tracer
-*/
 
 #include <cstdlib>
 #include <iostream>
@@ -784,11 +776,11 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     appImage->findPoints(addr, callPoints);
 
                     if (isOracle){
-                        if (!instOracleIndirect(appBin, OracleIndirect, callPoints[0], addr, max_map_size, num_predtm, indirect_addrs, path_marks))
+                        if (!instOracleIndirect(appBin, OracleIndirect, callPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs, path_marks))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTracer){
-                        if (!instTracerIndirect(appBin, TracerIndirect, callPoints[0], addr, max_map_size, num_predtm, indirect_addrs))
+                        if (!instTracerIndirect(appBin, TracerIndirect, callPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTrimmer){
@@ -796,11 +788,6 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                                 cout << "Indirect instrument error." << endl;
                     }
                     
-                    // vector<BPatch_point *>::iterator callPt_iter;
-                    // for(callPt_iter = callPoints.begin(); callPt_iter != callPoints.end(); ++callPt_iter) {
-                        
-                    //     instOracleIndirect(appBin, OracleIndirect, *callPt_iter, addr, max_map_size, num_predtm, indirect_addrs);                       
-                    // }
                     
                 }
                 
@@ -809,11 +796,11 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     appImage->findPoints(addr, jmpPoints);
                     
                     if (isOracle){
-                        if (!instOracleIndirect(appBin, OracleIndirect, jmpPoints[0], addr, max_map_size, num_predtm, indirect_addrs, path_marks))
+                        if (!instOracleIndirect(appBin, OracleIndirect, jmpPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs, path_marks))
                             cout << "Indirect instrument error." << endl;
                     }
                     else if (isTracer){
-                        if (!instTracerIndirect(appBin, TracerIndirect, jmpPoints[0], addr, max_map_size, num_predtm, indirect_addrs))
+                        if (!instTracerIndirect(appBin, TracerIndirect, jmpPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTrimmer){
@@ -821,22 +808,17 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                                 cout << "Indirect instrument error." << endl;
                     }
                     
-                    // vector<BPatch_point *>::iterator jmpPt_iter;
-                    // for(jmpPt_iter = jmpPoints.begin(); jmpPt_iter != jmpPoints.end(); ++jmpPt_iter) {
-                    //     instOracleIndirect(appBin, OracleIndirect, *jmpPt_iter, addr, max_map_size, num_predtm, indirect_addrs);
-                    // }
                 }
-                // 
                 else if(category == Dyninst::InstructionAPI::c_ReturnInsn) {
                     vector<BPatch_point *> retPoints;
                     appImage->findPoints(addr, retPoints);
 
                     if (isOracle){
-                        if (!instOracleIndirect(appBin, OracleIndirect, retPoints[0], addr, max_map_size, num_predtm, indirect_addrs, path_marks))
+                        if (!instOracleIndirect(appBin, OracleIndirect, retPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs, path_marks))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTracer){
-                        if (!instTracerIndirect(appBin, TracerIndirect, retPoints[0], addr, max_map_size, num_predtm, indirect_addrs))
+                        if (!instTracerIndirect(appBin, TracerIndirect, retPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTrimmer){
@@ -844,11 +826,6 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                                 cout << "Indirect instrument error." << endl;
                     }
                     
-                    // vector<BPatch_point *>::iterator retPt_iter;
-                    // for(retPt_iter = retPoints.begin(); retPt_iter != retPoints.end(); ++retPt_iter) {
-                    //      if (instOracleIndirect(appBin, OracleIndirect, *retPt_iter, addr, max_map_size, num_predtm, indirect_addrs, path_marks))
-                    //             cout << "Indirect instrument error." << endl;
-                    // }
                 }
  
             }

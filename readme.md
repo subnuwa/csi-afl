@@ -4,12 +4,14 @@ CSI-Fuzz aims to fuzz binaries efficiently, which uses the idea of full-speed fu
 The current version is for non-PIE binaries.
 
 ## Install Dyninst
-We use Dyninst to instrument target binaries. So firstly, install Dyninst [the branch](https://github.com/mxz297/dyninst).
+We use Dyninst to instrument target binaries. So firstly, install Dyninst [the branch](https://github.com/mxz297/dyninst).\<br>
+[Instruction for installing Capstone, libunwind and Dyninst](https://github.com/iu-parfunc/ShadowGuard/blob/master/bazel.sh); \<br>
+For the branch of Dyninst, use `csifuzz`.
 
 ```
 git clone https://github.com/mxz297/dyninst.git
 cd dyninst
-git checkout fuzzing
+git checkout csifuzz
 ```
 Then, follow the instructions on [install instructions](https://github.com/mxz297/dyninst) to install Dyninst.
 
@@ -23,7 +25,7 @@ export LD_LIBRARY_PATH=$DYNINST_INSTALL/lib:$CSIFUZZ_PATH
 export PATH=$PATH:$CSIFUZZ_PATH
 ```
 ## Install CSIFuzz
-Enter the folder CSIfuzz.
+Enter the folder csi-afl.
 Change DYN_ROOT in makefile accordingly. Then
 ```
 make clean && make all
