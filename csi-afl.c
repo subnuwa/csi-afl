@@ -3541,11 +3541,11 @@ static void maybe_update_plot_file(double bitmap_cvg, double eps) {
      execs_per_sec */
 
   fprintf(plot_file, 
-          "%llu, %llu, %u, %u, %u, %u, %0.02f%%, %llu, %llu, %u, %0.02f, %llu, %u, %llu, %i, %i, %llu, %i, %llu\n",
+          "%llu, %llu, %u, %u, %u, %u, %0.02f%%, %llu, %llu, %u, %0.02f, %u, %llu, %u, %llu, %i, %i, %llu, %i, %llu\n",
           get_cur_time() / 1000, queue_cycle - 1, current_entry, queued_paths,
           pending_not_fuzzed, pending_favored, bitmap_cvg, unique_crashes,
           unique_hangs, max_depth, eps, 
-
+          queued_with_bits,
           total_execs,
           calib_execs, 
           trim_execs,
@@ -7221,7 +7221,7 @@ EXP_ST void setup_dirs_fds(void) {
 
   fprintf(plot_file, "# unix_time, cycles_done, cur_path, paths_total, "
                      "pending_total, pending_favs, map_size, unique_crashes, "
-                     "unique_hangs, max_depth, execs_per_sec, "
+                     "unique_hangs, max_depth, execs_per_sec, new_edges_on, "
                      "execs_done, calib_execs, trim_execs, "
                      "total_traced, total_queued, "
                      "total_tmouts, trace_tmouts, total_crashes"
