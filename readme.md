@@ -102,13 +102,13 @@ Fuzzing the target binary.
 ./runCSIAFL.sh $out $seeds $target_bin $fuzz_time $dict $timeout $param
 ```
 
-$out: output folder
-$seeds: seed folder
-$target_bin: the target binary
-$fuzz_time: fuzzing time
-$dict: "nodict" or path to dictionary
-$timeout: time out
-$param: parameters for target binary
+    $out: output folder
+    $seeds: seed folder
+    $target_bin: the target binary
+    $fuzz_time: fuzzing time
+    $dict: "nodict" or path to dictionary
+    $timeout: time out
+    $param: parameters for target binary
 
 
 ```
