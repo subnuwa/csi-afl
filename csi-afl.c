@@ -1,10 +1,7 @@
 /* TODO
-  1. [OK]remove all about the "MARK_SIZE"
-  2. [OK]tracer should run forkserver for each time
-  3. [OK]use ORACLE to run dry_run();
-  4. [OK] record #loop in seed queue; use #loop to increase the energy assigned to a seed
-5. add attributes to plot_file
-
+    1. setup_instruments_ids();
+    2. setup_args(): mkdir CSI
+    3. setup_args(): "%s/../CSI" --> "%s/CSI"
 */
 
 
@@ -451,15 +448,15 @@ static void setup_args(int argc, char ** argv){
   oracle_argv = malloc((argc-optind+1) * sizeof(target_argv));//sizeof(pointer)
   tracer_argv = malloc((argc-optind+1) * sizeof(target_argv));
   trimmer_argv = malloc((argc-optind+1) * sizeof(target_argv)); //rosen
-  //CSI dir
-  u8* tmp = alloc_printf("%s/CSI", out_dir);
-  if (mkdir(tmp, 0700)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
+  //CSI dir -- use shell to build it. rosen
+  // u8* tmp = alloc_printf("%s/CSI", out_dir);
+  // if (mkdir(tmp, 0700)) PFATAL("Unable to create '%s'", tmp);
+  // ck_free(tmp);
 
-  csi_basedir = alloc_printf("%s/CSI", out_dir);
-  oracle_path = alloc_printf("%s/CSI/%s.oracle", out_dir, basename(target_path));
-  tracer_path = alloc_printf("%s/CSI/%s.tracer", out_dir, basename(target_path));
-  trimmer_path = alloc_printf("%s/CSI/%s.trimmer", out_dir, basename(target_path));//rosen
+  csi_basedir = alloc_printf("%s/../CSI", out_dir);
+  oracle_path = alloc_printf("%s/../CSI/%s.oracle", out_dir, basename(target_path));
+  tracer_path = alloc_printf("%s/../CSI/%s.tracer", out_dir, basename(target_path));
+  trimmer_path = alloc_printf("%s/../CSI/%s.trimmer", out_dir, basename(target_path));//rosen
 
   /* If present, replace "@@" with out_file. */
   /* TODO? - tcaseFD STDIN configuration. */
@@ -7787,18 +7784,11 @@ int main(int argc, char** argv) {
 
   setup_args(argc, argv); //rosen
 
-  ACTF("Setting up instrumentation...");
-  setup_instruments_ids();
-  if (stop_soon) goto stop_fuzzing;
-  OKF("Successfully set up instrumentation!");
+  // ACTF("Setting up instrumentation...");
+  // setup_instruments_ids();
+  // if (stop_soon) goto stop_fuzzing;
+  // OKF("Successfully set up instrumentation!");
 
-  
-  // ACTF("Starting tracer forkserver...");
-  // start_forkserver(&tracer_fsrv_PID, &tracer_fsrv_ctlFD, &tracer_fsrv_stFD, FORKSRV_FD, tracer_argv); 
-
-
-  // ACTF("Starting trimmer forkserver...");
-  // start_forkserver(&trimmer_fsrv_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD, FORKSRV_FD, trimmer_argv);
   
   //setup path marks before dry_run() executing initial seeds
   ACTF("Setting up initial path marks...");

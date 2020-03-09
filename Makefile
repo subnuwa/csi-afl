@@ -34,7 +34,8 @@ CXX 		= g++
 CXXFLAGS 	= -g -Wall -O3 -std=c++11
 LIBFLAGS 	= -fpic -shared
 LDFLAGS 	= -I$(DYNINST_INCLUDE)  -L$(DYNINST_LIB) \
-					-lcommon -liberty -ldyninstAPI -lboost_system -linstructionAPI -lstdc++fs
+					-lcommon -liberty -ldyninstAPI -lboost_system -linstructionAPI -lstdc++fs \
+					-lparseAPI -lsymtabAPI
 # -I$(TBB_INC) -I$(LOCAL_INC) -L$(LOCAL_LIBS) -I/usr/include
 
 

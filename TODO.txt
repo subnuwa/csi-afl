@@ -1,3 +1,4 @@
+
 [OK] 1. longer size of shared memrory
     1) 2 * MAP_SIZE + pathID_size
         0 ~ MAP_SIZE-1: edge frequency
@@ -49,8 +50,5 @@ if there's a loop, assign more energy
 
 [OK] 9. add a byte to record the exit code, in case the target program forks a new child.
 
-start_forkserver(&tracer_fsrv_PID, &tracer_fsrv_ctlFD, &tracer_fsrv_stFD, FORKSRV_FD, tracer_argv); 
-run_target(&tracer_child_PID, &tracer_fsrv_ctlFD, &tracer_fsrv_stFD, exec_tmout);
-stop_forkserver(&tracer_fsrv_PID, &tracer_fsrv_ctlFD, &tracer_fsrv_stFD);
 
 

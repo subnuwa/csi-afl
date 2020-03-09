@@ -17,13 +17,13 @@
 #include "types.h"
 
 #include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
+
 
 #include <map>
 #include <sstream>
 #include <climits>
 #include <set>
-using namespace std;
+
 
 #include "instConfig.h"
 #include "instUnmap.h"
@@ -33,9 +33,12 @@ using namespace std;
 #include "BPatch_flowGraph.h"
 #include "BPatch_function.h"
 #include "BPatch_point.h"
+#include "BPatch_object.h"
 
-
+namespace fs = std::experimental::filesystem;
+using namespace std;
 using namespace Dyninst;
+
 
 //hash table length
 //condition_id = 0; // assign  for each conditional edges
@@ -957,6 +960,17 @@ int main (int argc, char **argv){
         max_map_size = 0;
         for (auto countIter = allFunctions.begin (); countIter != allFunctions.end (); ++countIter) {
             BPatch_function *countFunc = *countIter;
+            ParseAPI::Function* f = ParseAPI::convert(countFunc);
+            // We should only instrument functions in .text.
+            ParseAPI::CodeRegion* codereg = f->region();
+            ParseAPI::SymtabCodeRegion* symRegion =
+                dynamic_cast<ParseAPI::SymtabCodeRegion*>(codereg);
+            assert(symRegion);
+            SymtabAPI::Region* symR = symRegion->symRegion();
+            if (symR->getRegionName() != ".text")
+                continue;
+
+
             char funcName[1024];
             countFunc->getName (funcName, 1024);
             
@@ -1005,6 +1019,16 @@ int main (int argc, char **argv){
     vector < BPatch_function * >::iterator funcIter;
     for (funcIter = allFunctions.begin (); funcIter != allFunctions.end (); ++funcIter) {
         BPatch_function *curFunc = *funcIter;
+        ParseAPI::Function* f = ParseAPI::convert(curFunc);
+        // We should only instrument functions in .text.
+        ParseAPI::CodeRegion* codereg = f->region();
+        ParseAPI::SymtabCodeRegion* symRegion =
+            dynamic_cast<ParseAPI::SymtabCodeRegion*>(codereg);
+        assert(symRegion);
+        SymtabAPI::Region* symR = symRegion->symRegion();
+        if (symR->getRegionName() != ".text")
+            continue;
+            
         char funcName[1024];
         curFunc->getName (funcName, 1024);
         if(isSkipFuncs(funcName)) continue;

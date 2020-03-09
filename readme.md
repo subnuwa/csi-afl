@@ -4,16 +4,77 @@ CSI-Fuzz aims to fuzz binaries efficiently, which uses the idea of full-speed fu
 The current version is for non-PIE binaries.
 
 ## Install Dyninst
-We use Dyninst to instrument target binaries. So firstly, install Dyninst [the branch](https://github.com/mxz297/dyninst).\<br>
-[Instruction for installing Capstone, libunwind and Dyninst](https://github.com/iu-parfunc/ShadowGuard/blob/master/bazel.sh); \<br>
+We use Dyninst to instrument target binaries. So firstly, install Dyninst [the branch](https://github.com/mxz297/dyninst).
+
+[Instruction for installing Capstone, libunwind and Dyninst](https://github.com/iu-parfunc/ShadowGuard/blob/master/bazel.sh); 
+
 For the branch of Dyninst, use `csifuzz`.
 
 ```
-git clone https://github.com/mxz297/dyninst.git
-cd dyninst
-git checkout csifuzz
+mkdir dyninst101
+cd dyinst101
+root_dir=`pwd`
 ```
-Then, follow the instructions on [install instructions](https://github.com/mxz297/dyninst) to install Dyninst.
+
+### Install capstone
+
+```
+git clone https://github.com/mxz297/capstone.git thirdparty/capstone
+cd thirdparty/capstone
+git checkout access-fixes
+cd $root_dir
+cd thirdparty/capstone
+mkdir install
+mkdir -p build
+cd build
+
+# Configure
+cmake -DCMAKE_INSTALL_PREFIX=`pwd`/../install ..
+
+# Install
+nprocs=`cat /proc/cpuinfo | awk '/^processor/{print $3}' | wc -l`
+make -j "$(($nprocs / 2))" install
+```
+
+### Install libunwind
+```
+cd $root_dir
+git clone  https://github.com/mxz297/libunwind.git thirdparty/libunwind
+cd thirdparty/libunwind
+mkdir install
+# Configure
+./autogen.sh
+./configure --prefix=`pwd`/install --enable-cxx-exceptions
+
+# Install
+nprocs=`cat /proc/cpuinfo | awk '/^processor/{print $3}' | wc -l`
+make -j "$(($nprocs / 2))" install
+```
+
+### Install Dyninst
+```
+cd $root_dir
+git clone https://github.com/mxz297/dyninst.git thirdparty/dyninst-10.1.0
+cd thirdparty/dyninst-10.1.0/
+git checkout csifuzz
+cd $root_dir
+cd thirdparty/dyninst-10.1.0/
+mkdir install
+mkdir -p build
+cd build
+
+# Configure
+cmake -DLibunwind_ROOT_DIR=`pwd`/../../libunwind/install -DCapstone_ROOT_DIR=`pwd`/../../capstone/install/ -DCMAKE_INSTALL_PREFIX=`pwd`/../install -G 'Unix Makefiles' ..
+
+nprocs=`cat /proc/cpuinfo | awk '/^processor/{print $3}' | wc -l`
+make -j "$(($nprocs / 2))"
+# Build
+#   Dyninst build tends to succeed with a retry after an initial build failure.
+#   Cover that base with couple of retries.
+
+make install
+```
+
 
 ## Set up ENVs
 ```
@@ -36,5 +97,21 @@ make clean && make all
 Fuzzing the target binary.
 
 ```
-./csi-afl -i /path/to/seeds -o /path/to/output -t 500 -- /path/to/target/binary [params]
+###./csi-afl -i /path/to/seeds -o /path/to/output -t 500 -- /path/to/target/binary [params]
+./instCSIAFL.sh $out $seeds $target_bin $fuzz_time $dict $timeout $param
+./runCSIAFL.sh $out $seeds $target_bin $fuzz_time $dict $timeout $param
+```
+
+$out: output folder
+$seeds: seed folder
+$target_bin: the target binary
+$fuzz_time: fuzzing time
+$dict: "nodict" or path to dictionary
+$timeout: time out
+$param: parameters for target binary
+
+
+```
+./instCSIAFL.sh ../../outputs/csinm ../../target-bins/nm/seed_dir/ ../../target-bins/nm/nm 10 "nodict" 500 -n @@
+./runCSIAFL.sh ../../outputs/csinm ../../target-bins/nm/seed_dir/ ../../target-bins/nm/nm 10 "nodict" 500 -n @@
 ```
