@@ -23,6 +23,8 @@ mkdir ${OUTDIR}/CSI
 ./CSIDyninst -i ${TARGET} -o ${OUTDIR}/CSI/${NAME}.oracle -b ${OUTDIR}/CSI -F
 #instrument tracer
 ./CSIDyninst -i ${TARGET} -o ${OUTDIR}/CSI/${NAME}.tracer -b ${OUTDIR}/CSI -T
+# crasher
+./CSIDyninst -i ${TARGET} -o ${OUTDIR}/CSI/${NAME}.crasher -b ${OUTDIR}/CSI -C
 # instrument trimmer
 ./CSIDyninst -i ${TARGET} -o ${OUTDIR}/CSI/${NAME}.trimmer -b ${OUTDIR}/CSI -M
 

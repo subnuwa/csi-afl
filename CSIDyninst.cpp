@@ -57,6 +57,7 @@ char* csifuzz_dir = NULL;  //Output dir of csifuzz results
 bool isPrep = false, // preprocessing
     isOracle = false, // instrument oracle
     isTrimmer = false, // trimmer
+    isCrasher = false, // crasher
     isTracer = false; // instrument tracer
 
 std::unordered_map<EDGE, u32, HashEdge> cond_map;
@@ -74,15 +75,18 @@ BPatch_function *TracerIndirect;
 BPatch_function *TrimmerIndirect;
 BPatch_function *TracerLoops;
 BPatch_function *TrimmerPredtm;
+BPatch_function *CrasherPredtm;
+BPatch_function *CrasherIndirect;
 
 const char *instLibrary = "./libCSIDyninst.so";
 
-static const char *OPT_STR = "i:o:vb:PFTM";
-static const char *USAGE = " -i <binary> -o <binary> -b <csifuzz-dir> -F(PT)\n \
+static const char *OPT_STR = "i:o:vb:CPFTM";
+static const char *USAGE = " -i <binary> -o <binary> -b <csifuzz-dir> -F(CMPT)\n \
             -i: Input binary \n \
             -o: Output binary\n \
             -b: Output dir of csifuzz results\n \
             -v: Verbose output\n \
+            -C: Crasher \n \
             -P: The initial preprocessing (counting edges and blocks; writing address files.)\n \
             -F: The full-speed oracle\n \
             -T: The tracer\n \
@@ -105,6 +109,9 @@ bool parseOptions(int argc, char **argv)
             break;
         case 'v':
             verbose = true;
+            break;
+        case 'C':
+            isCrasher = true;
             break;
         case 'P':
             isPrep = true;
@@ -142,8 +149,9 @@ bool parseOptions(int argc, char **argv)
         return false;
     }
 
-    if ((isPrep == false) && (isOracle == false) && (isTracer == false) && (isTrimmer == false)){
-        cerr << "Specify -P, -T, -F, or -M" << endl;
+    if ((isPrep == false) && (isOracle == false) && (isTracer == false)
+         && (isTrimmer == false) && (isCrasher == false)){
+        cerr << "Specify -C, -P, -T, -F, or -M" << endl;
         cerr << "Usage: " << argv[0] << USAGE;
         return false;
     }
@@ -260,7 +268,7 @@ bool count_edges(BPatch_binaryEdit * appBin, BPatch_image *appImage,
         vector<BPatch_edge *> outgoingEdge;
         block->getOutgoingEdges(outgoingEdge);
         vector<BPatch_edge *>::iterator edge_iter;
-
+        
         
         for(edge_iter = outgoingEdge.begin(); edge_iter != outgoingEdge.end(); ++edge_iter) {
             src_bb = (*edge_iter)->getSource();
@@ -443,12 +451,33 @@ bool readAddrs(fs::path output_dir){
 
 // instrument at pre-determined edges
 bool instOraclePredtm(BPatch_binaryEdit * appBin, BPatch_function * instFunc, BPatch_point * instrumentPoint, 
-                        u32 cond_id, fs::path file_marks){
+                        u32 cond_id){
     vector<BPatch_snippet *> cond_args;
     BPatch_constExpr CondID(cond_id);
     cond_args.push_back(&CondID);
-    BPatch_constExpr PathMarks(file_marks.c_str());
-    cond_args.push_back(&PathMarks);
+    // BPatch_constExpr PathMarks(file_marks.c_str());
+    // cond_args.push_back(&PathMarks);
+
+    BPatch_funcCallExpr instCondExpr(*instFunc, cond_args);
+
+    BPatchSnippetHandle *handle =
+            appBin->insertSnippet(instCondExpr, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
+    if (!handle) {
+            cerr << "Failed to insert instrumention in basic block at id: " << cond_id << endl;
+            return false;
+        }
+    return true;         
+
+}
+
+// instrument at pre-determined edges
+bool instCrasherPredtm(BPatch_binaryEdit * appBin, BPatch_function * instFunc, BPatch_point * instrumentPoint, 
+                        u32 cond_id){
+    vector<BPatch_snippet *> cond_args;
+    BPatch_constExpr CondID(cond_id);
+    cond_args.push_back(&CondID);
+    // BPatch_constExpr PathMarks(file_marks.c_str());
+    // cond_args.push_back(&PathMarks);
 
     BPatch_funcCallExpr instCondExpr(*instFunc, cond_args);
 
@@ -509,7 +538,7 @@ ind_addr_file: path to the file that contains (src_addr des_addr id)
 */
 bool instOracleIndirect(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
                 BPatch_point * instrumentPoint, Dyninst::Address src_addr, u32 num_all_edges, u32 num_predtm_edges,
-                fs::path ind_addr_file, fs::path file_marks){
+                fs::path ind_addr_file){
     vector<BPatch_snippet *> ind_args;
 
     BPatch_constExpr srcOffset((u64)src_addr);
@@ -521,9 +550,30 @@ bool instOracleIndirect(BPatch_binaryEdit * appBin, BPatch_function * instFunc,
     ind_args.push_back(&CondEdges);
     BPatch_constExpr AddrIDFile(ind_addr_file.c_str());
     ind_args.push_back(&AddrIDFile);
-    BPatch_constExpr MarksFile(file_marks.c_str());
-    ind_args.push_back(&MarksFile);
+    // BPatch_constExpr MarksFile(file_marks.c_str());
+    // ind_args.push_back(&MarksFile);
 
+
+    BPatch_funcCallExpr instIndirect(*instFunc, ind_args);
+
+    BPatchSnippetHandle *handle =
+            appBin->insertSnippet(instIndirect, *instrumentPoint, BPatch_callBefore, BPatch_firstSnippet);
+    
+    if (!handle) {
+            cerr << "Failed to insert instrumention in basic block at offset 0x" << hex << src_addr << endl;
+            return false;
+        }
+    return true;
+
+}
+
+bool instCrasherIndirect(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
+                BPatch_point * instrumentPoint, Dyninst::Address src_addr){
+    vector<BPatch_snippet *> ind_args;
+
+    BPatch_constExpr srcOffset((u64)src_addr);
+    ind_args.push_back(&srcOffset);
+    ind_args.push_back(new BPatch_dynamicTargetExpr());//target offset
 
     BPatch_funcCallExpr instIndirect(*instFunc, ind_args);
 
@@ -629,7 +679,7 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
     unsigned long trg_addr = 0;
     u32 edge_id = 0;
 
-    fs::path path_marks = output_dir / PATH_MARKS; // path to file recording marks in a program
+    //fs::path path_marks = output_dir / PATH_MARKS; // path to file recording marks in a program
     fs::path indirect_addrs = output_dir / INDIRECT_ADDR_ID; //indirect edge addrs and ids
     BPatch_function *curFunc = *funcIter;
     BPatch_flowGraph *appCFG = curFunc->getCFG ();
@@ -676,22 +726,7 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                 else {
                     cout << "CondJumpTaken could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
                     return false;
-                }
-
-                if (isOracle){
-                    if (!instOraclePredtm(appBin, OraclePredtm, (*edge_iter)->getPoint(), edge_id, path_marks))
-                        cout << "Pre-determined edges instrument error." << endl;
-                }
-                else if (isTracer){
-                    if (!instTracerPredtm(appBin, TracerPredtm, (*edge_iter)->getPoint(), edge_id))
-                        cout << "Pre-determined edges instrument error." << endl;
-                }
-                else if (isTrimmer){
-                    if (!instTrimmerPredtm(appBin, TrimmerPredtm, (*edge_iter)->getPoint(), edge_id))
-                        cout << "Pre-determined edges instrument error." << endl;
-                    
-                }
-                
+                }  
             }
             else if ((*edge_iter)->getType() == CondJumpNottaken){
                 itdl = condnot_map.find(EDGE(src_addr, trg_addr));
@@ -702,21 +737,6 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     cout << "CondJumpNottaken could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
                     return false;
                 }
-
-                if (isOracle){
-                    if (!instOraclePredtm(appBin, OraclePredtm, (*edge_iter)->getPoint(), edge_id, path_marks))
-                        cout << "Pre-determined edges instrument error." << endl;
-                }
-                else if (isTracer){
-                    if (!instTracerPredtm(appBin, TracerPredtm, (*edge_iter)->getPoint(), edge_id))
-                        cout << "Pre-determined edges instrument error." << endl;
-                }
-                else if (isTrimmer){
-                    if (!instTrimmerPredtm(appBin, TrimmerPredtm, (*edge_iter)->getPoint(), edge_id))
-                        cout << "Pre-determined edges instrument error." << endl;
-                    
-                }
-                
             } 
             else if ((*edge_iter)->getType() == UncondJump){
                 itdl = uncond_map.find(EDGE(src_addr, trg_addr));
@@ -726,20 +746,6 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                 else {
                     cout << "UncondJump could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
                     return false;
-                }
-
-                if (isOracle){
-                    if (!instOraclePredtm(appBin, OraclePredtm, (*edge_iter)->getPoint(), edge_id, path_marks))
-                        cout << "Pre-determined edges instrument error." << endl;
-                }
-                else if (isTracer){
-                    if (!instTracerPredtm(appBin, TracerPredtm, (*edge_iter)->getPoint(), edge_id))
-                        cout << "Pre-determined edges instrument error." << endl;
-                }
-                else if (isTrimmer){
-                    if (!instTrimmerPredtm(appBin, TrimmerPredtm, (*edge_iter)->getPoint(), edge_id))
-                        cout << "Pre-determined edges instrument error." << endl;
-                    
                 }
             }
             else if ((*edge_iter)->getType() == NonJump){
@@ -751,9 +757,14 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     cout << "NonJump could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
                     return false;
                 }
+            }
+            else{
+                continue;
+            }
 
-                if (isOracle){
-                    if (!instOraclePredtm(appBin, OraclePredtm, (*edge_iter)->getPoint(), edge_id, path_marks))
+
+            if (isOracle){
+                    if (!instOraclePredtm(appBin, OraclePredtm, (*edge_iter)->getPoint(), edge_id))
                         cout << "Pre-determined edges instrument error." << endl;
                 }
                 else if (isTracer){
@@ -762,11 +773,12 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                 }
                 else if (isTrimmer){
                     if (!instTrimmerPredtm(appBin, TrimmerPredtm, (*edge_iter)->getPoint(), edge_id))
-                        cout << "Pre-determined edges instrument error." << endl;
-                    
+                        cout << "Pre-determined edges instrument error." << endl; 
                 }
-                
-            }              
+                else if (isCrasher){
+                    if (!instCrasherPredtm(appBin, CrasherPredtm, (*edge_iter)->getPoint(), edge_id))
+                        cout << "Pre-determined edges instrument error." << endl;
+                }              
             
         }
 
@@ -779,7 +791,7 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     appImage->findPoints(addr, callPoints);
 
                     if (isOracle){
-                        if (!instOracleIndirect(appBin, OracleIndirect, callPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs, path_marks))
+                        if (!instOracleIndirect(appBin, OracleIndirect, callPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTracer){
@@ -788,6 +800,10 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     }
                     else if (isTrimmer){
                         if (!instTrimmerIndirect(appBin, TrimmerIndirect, callPoints[0], addr))
+                                cout << "Indirect instrument error." << endl;
+                    }
+                    else if (isCrasher){
+                        if (!instCrasherIndirect(appBin, CrasherIndirect, callPoints[0], addr))
                                 cout << "Indirect instrument error." << endl;
                     }
                     
@@ -799,7 +815,7 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     appImage->findPoints(addr, jmpPoints);
                     
                     if (isOracle){
-                        if (!instOracleIndirect(appBin, OracleIndirect, jmpPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs, path_marks))
+                        if (!instOracleIndirect(appBin, OracleIndirect, jmpPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
                             cout << "Indirect instrument error." << endl;
                     }
                     else if (isTracer){
@@ -810,6 +826,10 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                         if (!instTrimmerIndirect(appBin, TrimmerIndirect, jmpPoints[0], addr))
                                 cout << "Indirect instrument error." << endl;
                     }
+                    else if (isCrasher){
+                        if (!instCrasherIndirect(appBin, CrasherIndirect, jmpPoints[0], addr))
+                                cout << "Indirect instrument error." << endl;
+                    }
                     
                 }
                 else if(category == Dyninst::InstructionAPI::c_ReturnInsn) {
@@ -817,7 +837,7 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     appImage->findPoints(addr, retPoints);
 
                     if (isOracle){
-                        if (!instOracleIndirect(appBin, OracleIndirect, retPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs, path_marks))
+                        if (!instOracleIndirect(appBin, OracleIndirect, retPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTracer){
@@ -826,6 +846,10 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     }
                     else if (isTrimmer){
                         if (!instTrimmerIndirect(appBin, TrimmerIndirect, retPoints[0], addr))
+                                cout << "Indirect instrument error." << endl;
+                    }
+                    else if (isCrasher){
+                        if (!instCrasherIndirect(appBin, CrasherIndirect, retPoints[0], addr))
                                 cout << "Indirect instrument error." << endl;
                     }
                     
@@ -858,7 +882,7 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
 */
 
 bool insertForkServer(BPatch_binaryEdit * appBin, BPatch_function * instIncFunc,
-                         BPatch_function *funcInit, u32 num_predtm_edges, fs::path marks_file, fs::path ind_addr_file){
+                         BPatch_function *funcInit, u32 num_predtm_edges, fs::path ind_addr_file){
 
     /* Find the instrumentation points */
     vector < BPatch_point * >*funcEntry = funcInit->findPoint (BPatch_entry);
@@ -873,8 +897,8 @@ bool insertForkServer(BPatch_binaryEdit * appBin, BPatch_function * instIncFunc,
     BPatch_constExpr NumCond(num_predtm_edges);
     instArgs.push_back(&NumCond);
     
-    BPatch_constExpr MARKIDFile(marks_file.c_str());
-    instArgs.push_back(&MARKIDFile);
+    // BPatch_constExpr MARKIDFile(marks_file.c_str());
+    // instArgs.push_back(&MARKIDFile);
     BPatch_constExpr AddrIDFile(ind_addr_file.c_str());
     instArgs.push_back(&AddrIDFile);
 
@@ -899,7 +923,7 @@ int main (int argc, char **argv){
     fs::path out_dir (reinterpret_cast<const char*>(csifuzz_dir)); // files for csifuzz results
     
     fs::path indi_addr_id_file = out_dir / INDIRECT_ADDR_ID; //indirect edge addrs and ids
-    fs::path marks_file = out_dir / PATH_MARKS;
+    //fs::path marks_file = out_dir / PATH_MARKS;
 
     /* start instrumentation*/
     BPatch bpatch;
@@ -933,25 +957,23 @@ int main (int argc, char **argv){
     TrimmerIndirect = findFuncByName (appImage, (char *) "TrimmerIndirect");
     TracerLoops = findFuncByName (appImage, (char *) "TracerLoops");
     TrimmerPredtm = findFuncByName (appImage, (char *) "TrimmerPredtm");
+    CrasherPredtm = findFuncByName (appImage, (char *) "CrasherPredtm");
+    CrasherIndirect = findFuncByName (appImage, (char *) "CrasherIndirect");
     //BBCallback =  findFuncByName (appImage, (char *) "BBCallback");
     //ConditionMark = findFuncByName (appImage, (char *) "ConditionMark");
     
     //atMainExit = findFuncByName (appImage, (char *) "atMainExit");
-
+    
 
     if (!initAflForkServer || !OraclePredtm || !OracleIndirect
          || !TracerPredtm || !TracerIndirect || !TracerLoops 
-         || !TrimmerPredtm || !TrimmerIndirect) {
+         || !TrimmerPredtm || !TrimmerIndirect || !CrasherPredtm || !CrasherIndirect) {
         cerr << "Instrumentation library lacks callbacks!" << endl;
         return EXIT_FAILURE;
     }
 
-
-    /* count the number of edges for the length of hash table
-    1. num_c = the number of conditional edges
-    2. num_i = the number of indirect call/jump sites
-    3. length of hash table = num_c + num_i
-    */
+    
+  
    if (isPrep){
        fs::path num_file = out_dir / NUM_EDGE_FILE; // out_dir: csifuzz outputs; max edges
        // iterate over all functions to count edges
@@ -974,7 +996,7 @@ int main (int argc, char **argv){
             char funcName[1024];
             countFunc->getName (funcName, 1024);
             
-            if(isSkipFuncs(funcName)) continue;
+            //if(isSkipFuncs(funcName)) continue;
             //count edges
             if(!count_edges(appBin, appImage, countIter, funcName, out_dir)) 
                                 cout << "Empty function" << funcName << endl;      
@@ -1007,15 +1029,7 @@ int main (int argc, char **argv){
         return EXIT_FAILURE;
     }
 
-   /* instrument edges
-   1. insert at conditional edges, like afl
-   2.  insert at indirect edges, and compare edges dynamically:
-        1) the first id of an indirect edge is the number of conditional edges num_c
-        2) use map to maintain [(src_addr, des_addr), id]
-        3) at the beginning of main, insert a global map to load [(src_addr, des_addr), id]
-        4) at each indirect edge, when meeting a new indirect edge, write the [(src_addr, des_addr), id] 
-            into a file to record them; it can be reused if fuzzing stops accidently
-    */
+ 
     vector < BPatch_function * >::iterator funcIter;
     for (funcIter = allFunctions.begin (); funcIter != allFunctions.end (); ++funcIter) {
         BPatch_function *curFunc = *funcIter;
@@ -1028,10 +1042,10 @@ int main (int argc, char **argv){
         SymtabAPI::Region* symR = symRegion->symRegion();
         if (symR->getRegionName() != ".text")
             continue;
-            
+
         char funcName[1024];
         curFunc->getName (funcName, 1024);
-        if(isSkipFuncs(funcName)) continue;
+        //if(isSkipFuncs(funcName)) continue;
         //instrument at edges
         if (!edgeInstrument(appBin, appImage, funcIter, funcName, out_dir)) {
             cout << "fail to instrument function: " << funcName << endl;
@@ -1043,16 +1057,16 @@ int main (int argc, char **argv){
     BPatch_function *funcToPatch = NULL;
     BPatch_Vector<BPatch_function*> funcs;
     
-    appImage->findFunction("main",funcs);
+    appImage->findFunction("_start",funcs);  // "main"
     if(!funcs.size()) {
-        cerr << "Couldn't locate main, check your binary. "<< endl;
+        cerr << "Couldn't locate _start, check your binary. "<< endl;
         return EXIT_FAILURE;
     }
     // there should really be only one
     funcToPatch = funcs[0];
 
-    if(!insertForkServer (appBin, initAflForkServer, funcToPatch, num_predtm, marks_file, indi_addr_id_file)){
-        cerr << "Could not insert init callback at main." << endl;
+    if(!insertForkServer (appBin, initAflForkServer, funcToPatch, num_predtm, indi_addr_id_file)){
+        cerr << "Could not insert init callback at _start." << endl;
         return EXIT_FAILURE;
     }
 
