@@ -242,13 +242,13 @@ void TracerPredtm(u32 predtm_id){
     for saving crashes;
 */
 void CrasherPredtm(u32 predtm_id){
+
     if (trace_bits){
-        if ((trace_bits[predtm_id + MAP_SIZE] & 4) == 1){ // crash not examined
-            trace_bits[predtm + MAP_SIZE] &= 251; //set examined 1111 1011
+        if ((trace_bits[predtm_id + MAP_SIZE] & 4) == 4){ // crash not examined
+            trace_bits[predtm_id + MAP_SIZE] &= 251; //set examined 1111 1011
             // don't exit, let crasher do the tracing
             trace_bits[MAP_SIZE + BYTES_FLAGS + FLAG_LOOP] = COND_COVERAGE;
             //exit(COND_COVERAGE);
-
         }
     }
 }
@@ -262,7 +262,6 @@ void TrimmerPredtm(u32 predtm_id){
         trace_bits[predtm_id]++; 
     }
 }
-
 
 /* 
 max_map_size: the max number of edges
@@ -415,18 +414,18 @@ void CrasherIndirect(u64 src_addr, u64 des_addr){
     auto itdl = indirect_ids.find(EDGE(src_addr, des_addr));
     if (itdl != indirect_ids.end()){ //edge exists
         u32 inID = (*itdl).second;
-        if ((trace_bits[inID + MAP_SIZE] & 4) == 1){ //crash not met before
+        if ((trace_bits[inID + MAP_SIZE] & 4) == 4){ //crash not met before
             trace_bits[inID + MAP_SIZE] &= 251; //set crash examined 1111 1011
             // don't exit, let crasher do the tracing; only indicate
             trace_bits[MAP_SIZE + BYTES_FLAGS + FLAG_LOOP] = INDIRECT_COVERAGE;
-            exit(INDIRECT_COVERAGE);   
+            //exit(INDIRECT_COVERAGE);   
         }
     }
     //it's wierd that the edge has not been examined by tracer or oracle before;
     // regard it as a new one anyway
     else {
         trace_bits[MAP_SIZE + BYTES_FLAGS + FLAG_LOOP] = INDIRECT_COVERAGE;
-        exit(INDIRECT_COVERAGE);  
+        //exit(INDIRECT_COVERAGE);  
     }
 
     
