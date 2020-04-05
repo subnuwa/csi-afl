@@ -34,9 +34,9 @@ CXX 		= g++
 CXXFLAGS 	= -g -Wall -O3 -std=c++11
 LIBFLAGS 	= -fpic -shared
 LDFLAGS 	= -I$(DYNINST_INCLUDE)  -L$(DYNINST_LIB) \
-					-lcommon -liberty -ldyninstAPI -lboost_system -linstructionAPI -lstdc++fs \
+					-lcommon -ldyninstAPI -lboost_system -linstructionAPI -lstdc++fs \
 					-lparseAPI -lsymtabAPI
-# -I$(TBB_INC) -I$(LOCAL_INC) -L$(LOCAL_LIBS) -I/usr/include
+# -liberty -I$(TBB_INC) -I$(LOCAL_INC) -L$(LOCAL_LIBS) -I/usr/include
 
 
 
@@ -111,23 +111,7 @@ all_done:
 clean:
 	rm -f $(PROGS) *.o *~ a.out core core.[1-9][0-9]* *.stackdump test .test *.so
 
-install: all
-	mkdir -p -m 755 $${DESTDIR}$(BIN_PATH) $${DESTDIR}$(HELPER_PATH) $${DESTDIR}$(DOC_PATH) $${DESTDIR}$(MISC_PATH)
-	rm -f $${DESTDIR}$(BIN_PATH)/afl-plot.sh
-	install -m 755 $(PROGS) $(SH_PROGS) $${DESTDIR}$(BIN_PATH)
-	rm -f $${DESTDIR}$(BIN_PATH)/untracer-as
-	if [ -f afl-qemu-trace ]; then install -m 755 afl-qemu-trace $${DESTDIR}$(BIN_PATH); fi
-ifndef AFL_TRACE_PC
-	if [ -f untracer-clang-fast -a -f afl-llvm-pass.so -a -f afl-llvm-rt.o ]; then set -e; install -m 755 untracer-clang-fast $${DESTDIR}$(BIN_PATH); ln -sf untracer-clang-fast $${DESTDIR}$(BIN_PATH)/untracer-clang-fast++; install -m 755 afl-llvm-pass.so afl-llvm-rt.o $${DESTDIR}$(HELPER_PATH); fi
-else
-	if [ -f untracer-clang-fast -a -f afl-llvm-rt.o ]; then set -e; install -m 755 untracer-clang-fast $${DESTDIR}$(BIN_PATH); ln -sf untracer-clang-fast $${DESTDIR}$(BIN_PATH)/untracer-clang-fast++; install -m 755 afl-llvm-rt.o $${DESTDIR}$(HELPER_PATH); fi
-endif
-	if [ -f afl-llvm-rt-32.o ]; then set -e; install -m 755 afl-llvm-rt-32.o $${DESTDIR}$(HELPER_PATH); fi
-	if [ -f afl-llvm-rt-64.o ]; then set -e; install -m 755 afl-llvm-rt-64.o $${DESTDIR}$(HELPER_PATH); fi
 
-	install -m 644 docs/README docs/ChangeLog docs/*.txt $${DESTDIR}$(DOC_PATH)
-	cp -r testcases/ $${DESTDIR}$(MISC_PATH)
-	cp -r dictionaries/ $${DESTDIR}$(MISC_PATH)
 
 publish: clean
 	test "`basename $$PWD`" = "afl" || exit 1

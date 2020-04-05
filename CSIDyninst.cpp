@@ -924,9 +924,10 @@ int main (int argc, char **argv){
     
     fs::path indi_addr_id_file = out_dir / INDIRECT_ADDR_ID; //indirect edge addrs and ids
     //fs::path marks_file = out_dir / PATH_MARKS;
-
+    
     /* start instrumentation*/
     BPatch bpatch;
+    
     // skip all libraries unless -l is set
     BPatch_binaryEdit *appBin = bpatch.openBinary (originalBinary, false);
     if (appBin == NULL) {
