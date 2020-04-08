@@ -1,7 +1,9 @@
 # Overview
+Remove instrumentation on the binary file using libelf.
+
 CSI-Fuzz aims to fuzz binaries efficiently, which uses the idea of full-speed fuzzing. 
 
-The current version is for non-PIE binaries.
+The current version is for non-PIE binaries. It's tested on Linux 18.04, 64bit.
 
 ## Install Dyninst
 We use Dyninst to instrument target binaries. So firstly, install Dyninst [the branch](https://github.com/mxz297/dyninst).
@@ -75,7 +77,6 @@ make -j "$(($nprocs / 2))"
 make install
 ```
 
-
 ## Set up ENVs
 ```
 export DYNINST_INSTALL=/path/to/dyninst/build/dir
@@ -85,6 +86,10 @@ export DYNINSTAPI_RT_LIB=$DYNINST_INSTALL/lib/libdyninstAPI_RT.so
 export LD_LIBRARY_PATH=$DYNINST_INSTALL/lib:$CSIFUZZ_PATH
 export PATH=$PATH:$CSIFUZZ_PATH
 ```
+
+## Install libelf
+    sudo apt install libelf-dev
+
 ## Install CSIFuzz
 Enter the folder csi-afl.
 Change DYN_ROOT in makefile accordingly. Then

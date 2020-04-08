@@ -6,7 +6,7 @@
 #define NO_JUMP_ADDR_ID "no_jump_addr_id.txt"
 #define UNCOND_JUMP_ADDR_ID "uncond_jump_addr_id.txt"
 
-#define INDIRECT_ADDR_ID "indirect_addr_ids.txt"
+#define INDIRECT_ADDR_ID    "indirect_addr_ids.txt"
 
 //mark file for pre-determined edges
 #define PATH_MARKS      "path_marks.txt"
@@ -29,11 +29,17 @@
 // give loops more air time
 #define LOOP_TIME   8
 
-// flags to record examined edges
-#define BYTES_FLAGS     (1 << 18)
-
 
 #define COND_COVERAGE 66 //exit(COND_COVERAGE), conditional jump
 #define INDIRECT_COVERAGE 67  //indirect jump/call
 
 
+// for remove exit(); the mapping
+#define ORACLE_MAP      "oracle_map_addr.txt"
+#define CRASHER_MAP     "crasher_map_addr.txt"
+#define ORACLE_EDGES_MAP        "oracle_edges_mapping.txt"
+#define CRASHER_EDGES_MAP        "crasher_edges_mapping.txt"
+
+#define EDGE_COVERED    1
+#define EDGE_MARK       2
+#define EDGE_CRASH      4

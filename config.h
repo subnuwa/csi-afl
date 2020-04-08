@@ -316,6 +316,9 @@
 #define MAP_SIZE_POW2       18
 #define MAP_SIZE            (1 << MAP_SIZE_POW2)
 
+// flags to record examined edges
+#define BYTES_FLAGS     MAP_SIZE
+
 
 /* Maximum allocator request size (keep well under INT_MAX): */
 

@@ -1,54 +1,25 @@
+1.[DONE] save and read data
+    1) data: (edge_id, src_addr, des_addr, inst_begin_addr, inst_end_addr)
+    2) save data
+        sort data in ascending order in terms of edge_id
+    3) run tracer, and check the non-zero elements in bitmap;
+        the index of the non-zero element is the #line
+    4) read the (edge_id)th line from the data file 
 
-[OK] 1. longer size of shared memrory
-    1) 2 * MAP_SIZE + pathID_size
-        0 ~ MAP_SIZE-1: edge frequency
-        MAP_SIZE ~ 2*MAP_SIZE - 1: examined or not, mimic re-instrumentation: 255 not examined; 0 examined
-                        NO[pathID_size: 32 bytes, for path identifiers]
-        pathID_size: use 4 bytes (u32) to record the path id
-        2) edge_id: 0 ~
-[OK] 2. mimic re-instrument: 
-    shm[MAP_SIZE] ~ shm[2*MAP_SIZE - 1]
-        [NO]pathID: 0 ~
-            one bit indicate whether a path is examined or not
-            1) (addr1, addr2, ID)
-            2) location and value in the shared memeory
-                shm: the pointer to shared memrory
-                ### calculation ###
-                
-                N = (ID >> 3) + 2 * MAP_SIZE
-                m = ID & 7
-                shm[N] = shm[N] | (1 << m )
-                ##################
-[OK] 3. path ID: length 4 bytes
-    1) Use a "set" to record all marks;
-    2) one mark is the id of the related edge
-    3）copy the data in the set to the shared memroy
-    3) calculate a cksum for the path marks in the main fuzzer
+2.[DONE] don't remove instrumentation at edges that are marks
 
-[OK] 4. loop: detect loops in static dynamic analysis
-if there's a loop, assign more energy
-    1) in tracer: for each edge, check the loop flag;
-    2) record is_loop in queue;
+3.[DONE] keep the edge flag, mark flag and crash flag, in case that some edges cannot be removed.
 
-[OK] 5. remove crasher
-[OK] 6. oracle:
-    instrument conditional ids
-   1) exit according to shm[MAP_SIZE] ~ shm[2*MAP_SIZE - 1]
-   2) set path identfier when exit
-   3) leave path mark when executing, for path frequency
+4.[DONE] set two new arrays: oracle_inst_src[MAP_SIZE], oracle_inst_des[MAP_SIZE], crasher_inst_src[MAP_SIZE], crasher_inst_des[MAP_SIZE]; 
+        inst_source [edge_id] = inst_begin_addr
+        inst_target [edge_id] = inst_end_addr
+    at the address inst_begin_addr, replace with "jmp inst_end_addr"
 
-[OK] 7. tracer:
-    tracer should run forkserver
-    instrument conditional ids
-    invoke when: new edges or new crashes
-    1) set shm[MAP_SIZE] ~ shm[2*MAP_SIZE - 1]
-    2) set shm[0 ~ MAP_SIZE-1], and frequency
+5.[DONE] add function
+    setup_inst_addrs(), oracle_mapping, crasher_mapping
 
-[OK] 8. when a crash is exposed:
-    1) invoke tracer
-    2) save it according to AFL
+6.[DONE] jump_inst()
 
-[OK] 9. add a byte to record the exit code, in case the target program forks a new child.
-
-
+7.[DONE] rewrite lib**;
+    add jump_inst() to the right place; oracle, crasher
 

@@ -54,6 +54,7 @@ char *instrumentedBinary;
 bool verbose = false;
 char* csifuzz_dir = NULL;  //Output dir of csifuzz results
 
+
 bool isPrep = false, // preprocessing
     isOracle = false, // instrument oracle
     isTrimmer = false, // trimmer
@@ -64,6 +65,8 @@ std::unordered_map<EDGE, u32, HashEdge> cond_map;
 std::unordered_map<EDGE, u32, HashEdge> condnot_map;
 std::unordered_map<EDGE, u32, HashEdge> uncond_map;
 std::unordered_map<EDGE, u32, HashEdge> nojump_map;
+// [edge_id, src_addr, des_addr, inst_begin, inst_end]
+std::map <u32, std::vector<u64> > addr_inst_map;
 
 
 // call back functions
@@ -124,7 +127,7 @@ bool parseOptions(int argc, char **argv)
             break;
         case 'M':
             isTrimmer = true;
-            break;
+            break;            
         default:
             cerr << "Usage: " << argv[0] << USAGE;
             return false;
@@ -248,9 +251,9 @@ bool count_edges(BPatch_binaryEdit * appBin, BPatch_image *appImage,
     UncondJump_file.open (unjump_addr_ids.c_str(), ios::out | ios::app | ios::binary); //write file
 
     set < BPatch_basicBlock *>::iterator bb_iter;
-    BPatch_basicBlock *src_bb = NULL;
+    //BPatch_basicBlock *src_bb = NULL;
     BPatch_basicBlock *trg_bb = NULL;
-    unsigned long src_addr = 0;
+    //unsigned long src_addr = 0;
     unsigned long trg_addr = 0;
 
     for (bb_iter = allBlocks.begin (); bb_iter != allBlocks.end (); bb_iter++){
@@ -258,7 +261,7 @@ bool count_edges(BPatch_binaryEdit * appBin, BPatch_image *appImage,
         vector<pair<Dyninst::InstructionAPI::Instruction, Dyninst::Address> > insns;
         block->getInstructions(insns);
 
-        //Dyninst::Address addr = insns.back().second;  //addr: equal to offset when it's binary rewrite
+        Dyninst::Address jmp_addr= insns.back().second;  //addr: equal to offset when it's binary rewrite
         Dyninst::InstructionAPI::Instruction insn = insns.back().first; 
         Dyninst::InstructionAPI::Operation op = insn.getOperation();
         Dyninst::InstructionAPI::InsnCategory category = insn.getCategory();
@@ -271,15 +274,15 @@ bool count_edges(BPatch_binaryEdit * appBin, BPatch_image *appImage,
         
         
         for(edge_iter = outgoingEdge.begin(); edge_iter != outgoingEdge.end(); ++edge_iter) {
-            src_bb = (*edge_iter)->getSource();
+            //src_bb = (*edge_iter)->getSource();
             trg_bb = (*edge_iter)->getTarget();
-            src_addr = src_bb->getStartAddress();
+            //src_addr = src_bb->getStartAddress();
             trg_addr = trg_bb->getStartAddress();
             //count pre-determined edges
             if ((*edge_iter)->getType() == CondJumpTaken){
 
                 if(CondTaken_file.is_open()){
-                    CondTaken_file << src_addr << " " << trg_addr << " " << num_predtm << endl; 
+                    CondTaken_file << jmp_addr << " " << trg_addr << " " << num_predtm << endl; 
                     
                 }
                 else{
@@ -290,7 +293,7 @@ bool count_edges(BPatch_binaryEdit * appBin, BPatch_image *appImage,
             }
             else if ((*edge_iter)->getType() == CondJumpNottaken){
                 if(CondNot_file.is_open()){
-                    CondNot_file << src_addr << " " << trg_addr << " " << num_predtm << endl; 
+                    CondNot_file << jmp_addr << " " << trg_addr << " " << num_predtm << endl; 
                     
                 }
                 else{
@@ -301,7 +304,7 @@ bool count_edges(BPatch_binaryEdit * appBin, BPatch_image *appImage,
             }
             else if ((*edge_iter)->getType() == UncondJump){
                 if(UncondJump_file.is_open()){
-                    UncondJump_file << src_addr << " " << trg_addr << " " << num_predtm << endl; 
+                    UncondJump_file << jmp_addr << " " << trg_addr << " " << num_predtm << endl; 
                     
                 }
                 else{
@@ -312,7 +315,7 @@ bool count_edges(BPatch_binaryEdit * appBin, BPatch_image *appImage,
             }
             else if ((*edge_iter)->getType() == NonJump){
                 if(NoJump_file.is_open()){
-                    NoJump_file << src_addr << " " << trg_addr << " " << num_predtm << endl; 
+                    NoJump_file << jmp_addr << " " << trg_addr << " " << num_predtm << endl; 
                     
                 }
                 else{
@@ -371,6 +374,13 @@ bool readAddrs(fs::path output_dir){
         if (CondTaken_file.is_open()){
             while (CondTaken_file >> src_addr >> trg_addr >> edge_id){
                 cond_map.insert(make_pair(EDGE(src_addr, trg_addr), edge_id));
+
+                // for writing addr_inst files
+                if (isOracle || isCrasher){
+                    addr_inst_map[edge_id].push_back(src_addr);
+                    addr_inst_map[edge_id].push_back(trg_addr);
+                }
+                
             }
             CondTaken_file.close();
         }
@@ -387,6 +397,12 @@ bool readAddrs(fs::path output_dir){
         if (CondNot_file.is_open()){
             while (CondNot_file >> src_addr >> trg_addr >> edge_id){
                 condnot_map.insert(make_pair(EDGE(src_addr, trg_addr), edge_id));
+
+                // for writing addr_inst files
+                if (isOracle || isCrasher){
+                    addr_inst_map[edge_id].push_back(src_addr);
+                    addr_inst_map[edge_id].push_back(trg_addr);
+                }
             }
             CondNot_file.close();
         }
@@ -403,6 +419,12 @@ bool readAddrs(fs::path output_dir){
         if (UncondJump_file.is_open()){
             while (UncondJump_file >> src_addr >> trg_addr >> edge_id){
                 uncond_map.insert(make_pair(EDGE(src_addr, trg_addr), edge_id));
+
+                // for writing addr_inst files
+                if (isOracle || isCrasher){
+                    addr_inst_map[edge_id].push_back(src_addr);
+                    addr_inst_map[edge_id].push_back(trg_addr);
+                }
             }
             UncondJump_file.close();
         }
@@ -419,6 +441,12 @@ bool readAddrs(fs::path output_dir){
         if (NoJump_file.is_open()){
             while (NoJump_file >> src_addr >> trg_addr >> edge_id){
                 nojump_map.insert(make_pair(EDGE(src_addr, trg_addr), edge_id));
+
+                // for writing addr_inst files
+                if (isOracle || isCrasher){
+                    addr_inst_map[edge_id].push_back(src_addr);
+                    addr_inst_map[edge_id].push_back(trg_addr);
+                }
             }
             NoJump_file.close();
         }
@@ -448,6 +476,129 @@ bool readAddrs(fs::path output_dir){
     return true;
 
 }
+
+/*
+// to write files that saves addr, inst_addr; 
+    sort them in terms of edge_id
+//inst_addr_file: the mapping file outputed by dyninst
+            [inst_begin, inst_end, edge, src_addr, des_addr] or
+            [inst_begin, inst_end, block, bb_addr]
+output_dir: dir to be written files
+bint: 1, oracle; 2, crasher
+*/
+
+bool writeInstAddr(fs::path output_dir, fs::path inst_addr_file){
+    //addr_inst_map
+    char buff[256];
+    char *tmp, *tmp_left;
+    //bool isedge = false;
+    unsigned long src_addr, des_addr, inst_begin, inst_end;
+    std::unordered_map<EDGE, u32, HashEdge>::iterator itid;
+
+    // read mapping addrs
+    
+    ifstream mapping_io (inst_addr_file.c_str());
+    if (mapping_io.is_open()){
+        while (mapping_io){
+            src_addr =0;
+            des_addr =0;
+            inst_begin=0;
+            inst_end=0;
+            tmp = NULL;
+            tmp_left = NULL;
+            
+            
+            mapping_io.getline(buff, sizeof(buff));
+
+            tmp = strtok_r (buff, ",", &tmp_left);
+            if (tmp != NULL) {
+                inst_begin = strtoul(tmp, NULL, 16);
+            }
+            else continue;
+   
+            tmp = strtok_r (NULL, ",", &tmp_left);
+            if (tmp != NULL) {
+                inst_end = strtoul(tmp, NULL, 16);
+            }
+            else continue;
+        
+            tmp = strtok_r (NULL, ",", &tmp_left);
+            if (strcmp(tmp,"edge") == 0){ // for edges
+                
+                tmp = strtok_r (NULL, ",", &tmp_left);
+                if (tmp != NULL) {
+                    src_addr = strtoul(tmp, NULL, 16);
+                }
+                else continue;
+                
+                if (tmp_left != NULL) {
+                    des_addr = strtoul(tmp_left, NULL, 16);
+                }
+                else continue;
+
+                itid = cond_map.find(EDGE(src_addr, des_addr));
+                if (itid != cond_map.end()){
+                    addr_inst_map[(*itid).second].push_back(inst_begin);
+                    addr_inst_map[(*itid).second].push_back(inst_end);
+                }
+
+                itid = condnot_map.find(EDGE(src_addr, des_addr));
+                if (itid != condnot_map.end()){
+                    addr_inst_map[(*itid).second].push_back(inst_begin);
+                    addr_inst_map[(*itid).second].push_back(inst_end);
+                }
+
+                itid = uncond_map.find(EDGE(src_addr, des_addr));
+                if (itid != uncond_map.end()){
+                    addr_inst_map[(*itid).second].push_back(inst_begin);
+                    addr_inst_map[(*itid).second].push_back(inst_end);
+                }
+
+                itid = nojump_map.find(EDGE(src_addr, des_addr));
+                if (itid != nojump_map.end()){
+                    addr_inst_map[(*itid).second].push_back(inst_begin);
+                    addr_inst_map[(*itid).second].push_back(inst_end);
+                }
+
+
+            }
+
+            
+        }
+        mapping_io.close();
+    }
+    else{
+        cout << "generate mapping files first." << endl;
+        return false;
+    }
+
+    // writing to a file
+    fs::path sort_map_path;
+    if (isOracle){
+        sort_map_path = output_dir / ORACLE_EDGES_MAP;
+    }
+    else {
+        sort_map_path = output_dir / CRASHER_EDGES_MAP;
+    }
+     
+    ofstream write_map (sort_map_path.c_str(), ios::out | ios::app | ios::binary);
+    if (write_map.is_open()){
+        for (auto itwrite = addr_inst_map.begin(); itwrite != addr_inst_map.end(); itwrite++){
+            if ((*itwrite).second.size() != 4) continue;
+            // [id, inst_begin, inst_end, src_addr, des_addr]
+            write_map << (*itwrite).first << ","<< (*itwrite).second[2] << "," << (*itwrite).second[3]<< "," << (*itwrite).second[0]<< "," << (*itwrite).second[1] << endl;
+            
+        }
+        write_map.close();
+    }
+    else{
+        cout << "wrong writing edge mapping."<<endl;
+        return false;
+    }
+    
+    return true;
+}
+
 
 // instrument at pre-determined edges
 bool instOraclePredtm(BPatch_binaryEdit * appBin, BPatch_function * instFunc, BPatch_point * instrumentPoint, 
@@ -648,7 +799,7 @@ bool instTrimmerIndirect(BPatch_binaryEdit * appBin, BPatch_function * instFunc,
 
 }
 
-/*for loops: instrument at back edges */
+/*for loops in tracer: instrument at back edges */
 bool instLoops(BPatch_binaryEdit * appBin, BPatch_function * instFunc, 
                 BPatch_point * instrumentPoint){
     vector<BPatch_snippet *> loop_args;
@@ -673,9 +824,9 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                     vector < BPatch_function * >::iterator funcIter, char* funcName,
                     fs::path output_dir){
     
-    BPatch_basicBlock *src_bb = NULL;
+    //BPatch_basicBlock *src_bb = NULL;
     BPatch_basicBlock *trg_bb = NULL;
-    unsigned long src_addr = 0;
+    //unsigned long src_addr = 0;
     unsigned long trg_addr = 0;
     u32 edge_id = 0;
 
@@ -699,7 +850,7 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
         vector<pair<Dyninst::InstructionAPI::Instruction, Dyninst::Address> > insns;
         block->getInstructions(insns);
 
-        Dyninst::Address addr = insns.back().second;  //addr: equal to offset when it's binary rewrite
+        Dyninst::Address jmp_addr= insns.back().second;  //addr: equal to offset when it's binary rewrite
         Dyninst::InstructionAPI::Instruction insn = insns.back().first; 
         Dyninst::InstructionAPI::Operation op = insn.getOperation();
         Dyninst::InstructionAPI::InsnCategory category = insn.getCategory();
@@ -713,48 +864,48 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
         std::unordered_map<EDGE, u32, HashEdge>::iterator itdl;
 
         for(edge_iter = outgoingEdge.begin(); edge_iter != outgoingEdge.end(); ++edge_iter) {
-            src_bb = (*edge_iter)->getSource();
+            //src_bb = (*edge_iter)->getSource();
             trg_bb = (*edge_iter)->getTarget();
-            src_addr = src_bb->getStartAddress();
+            //src_addr = src_bb->getStartAddress();
             trg_addr = trg_bb->getStartAddress();
 
             if ((*edge_iter)->getType() == CondJumpTaken){
-                itdl = cond_map.find(EDGE(src_addr, trg_addr));
+                itdl = cond_map.find(EDGE(jmp_addr, trg_addr));
                 if (itdl != cond_map.end()){
                     edge_id = (*itdl).second;
                 }
                 else {
-                    cout << "CondJumpTaken could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
+                    cout << "CondJumpTaken could't find an edge at address: " << jmp_addr << ", " << trg_addr << endl;
                     return false;
                 }  
             }
             else if ((*edge_iter)->getType() == CondJumpNottaken){
-                itdl = condnot_map.find(EDGE(src_addr, trg_addr));
+                itdl = condnot_map.find(EDGE(jmp_addr, trg_addr));
                 if (itdl != condnot_map.end()){
                     edge_id = (*itdl).second;
                 }
                 else {
-                    cout << "CondJumpNottaken could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
+                    cout << "CondJumpNottaken could't find an edge at address: " << jmp_addr << ", " << trg_addr << endl;
                     return false;
                 }
             } 
             else if ((*edge_iter)->getType() == UncondJump){
-                itdl = uncond_map.find(EDGE(src_addr, trg_addr));
+                itdl = uncond_map.find(EDGE(jmp_addr, trg_addr));
                 if (itdl != uncond_map.end()){
                     edge_id = (*itdl).second;
                 }
                 else {
-                    cout << "UncondJump could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
+                    cout << "UncondJump could't find an edge at address: " << jmp_addr << ", " << trg_addr << endl;
                     return false;
                 }
             }
             else if ((*edge_iter)->getType() == NonJump){
-                itdl = nojump_map.find(EDGE(src_addr, trg_addr));
+                itdl = nojump_map.find(EDGE(jmp_addr, trg_addr));
                 if (itdl != nojump_map.end()){
                     edge_id = (*itdl).second;
                 }
                 else {
-                    cout << "NonJump could't find an edge at address: " << src_addr << ", " << trg_addr << endl;
+                    cout << "NonJump could't find an edge at address: " << jmp_addr << ", " << trg_addr << endl;
                     return false;
                 }
             }
@@ -788,22 +939,22 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                 
                 if(category == Dyninst::InstructionAPI::c_CallInsn) {//indirect call
                     vector<BPatch_point *> callPoints;
-                    appImage->findPoints(addr, callPoints);
+                    appImage->findPoints(jmp_addr, callPoints);
 
                     if (isOracle){
-                        if (!instOracleIndirect(appBin, OracleIndirect, callPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
+                        if (!instOracleIndirect(appBin, OracleIndirect, callPoints[0], jmp_addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTracer){
-                        if (!instTracerIndirect(appBin, TracerIndirect, callPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
+                        if (!instTracerIndirect(appBin, TracerIndirect, callPoints[0], jmp_addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTrimmer){
-                        if (!instTrimmerIndirect(appBin, TrimmerIndirect, callPoints[0], addr))
+                        if (!instTrimmerIndirect(appBin, TrimmerIndirect, callPoints[0], jmp_addr))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isCrasher){
-                        if (!instCrasherIndirect(appBin, CrasherIndirect, callPoints[0], addr))
+                        if (!instCrasherIndirect(appBin, CrasherIndirect, callPoints[0], jmp_addr))
                                 cout << "Indirect instrument error." << endl;
                     }
                     
@@ -812,44 +963,44 @@ bool edgeInstrument(BPatch_binaryEdit * appBin, BPatch_image *appImage,
                 
                 else if(category == Dyninst::InstructionAPI::c_BranchInsn) {//indirect jump
                     vector<BPatch_point *> jmpPoints;
-                    appImage->findPoints(addr, jmpPoints);
+                    appImage->findPoints(jmp_addr, jmpPoints);
                     
                     if (isOracle){
-                        if (!instOracleIndirect(appBin, OracleIndirect, jmpPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
+                        if (!instOracleIndirect(appBin, OracleIndirect, jmpPoints[0], jmp_addr, MAP_SIZE, num_predtm, indirect_addrs))
                             cout << "Indirect instrument error." << endl;
                     }
                     else if (isTracer){
-                        if (!instTracerIndirect(appBin, TracerIndirect, jmpPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
+                        if (!instTracerIndirect(appBin, TracerIndirect, jmpPoints[0], jmp_addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTrimmer){
-                        if (!instTrimmerIndirect(appBin, TrimmerIndirect, jmpPoints[0], addr))
+                        if (!instTrimmerIndirect(appBin, TrimmerIndirect, jmpPoints[0], jmp_addr))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isCrasher){
-                        if (!instCrasherIndirect(appBin, CrasherIndirect, jmpPoints[0], addr))
+                        if (!instCrasherIndirect(appBin, CrasherIndirect, jmpPoints[0], jmp_addr))
                                 cout << "Indirect instrument error." << endl;
                     }
                     
                 }
                 else if(category == Dyninst::InstructionAPI::c_ReturnInsn) {
                     vector<BPatch_point *> retPoints;
-                    appImage->findPoints(addr, retPoints);
+                    appImage->findPoints(jmp_addr, retPoints);
 
                     if (isOracle){
-                        if (!instOracleIndirect(appBin, OracleIndirect, retPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
+                        if (!instOracleIndirect(appBin, OracleIndirect, retPoints[0], jmp_addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTracer){
-                        if (!instTracerIndirect(appBin, TracerIndirect, retPoints[0], addr, MAP_SIZE, num_predtm, indirect_addrs))
+                        if (!instTracerIndirect(appBin, TracerIndirect, retPoints[0], jmp_addr, MAP_SIZE, num_predtm, indirect_addrs))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isTrimmer){
-                        if (!instTrimmerIndirect(appBin, TrimmerIndirect, retPoints[0], addr))
+                        if (!instTrimmerIndirect(appBin, TrimmerIndirect, retPoints[0], jmp_addr))
                                 cout << "Indirect instrument error." << endl;
                     }
                     else if (isCrasher){
-                        if (!instCrasherIndirect(appBin, CrasherIndirect, retPoints[0], addr))
+                        if (!instCrasherIndirect(appBin, CrasherIndirect, retPoints[0], jmp_addr))
                                 cout << "Indirect instrument error." << endl;
                     }
                     
@@ -923,12 +1074,27 @@ int main (int argc, char **argv){
     fs::path out_dir (reinterpret_cast<const char*>(csifuzz_dir)); // files for csifuzz results
     
     fs::path indi_addr_id_file = out_dir / INDIRECT_ADDR_ID; //indirect edge addrs and ids
+
     //fs::path marks_file = out_dir / PATH_MARKS;
+    fs::path oracle_map = out_dir / ORACLE_MAP;
+    fs::path crasher_map = out_dir / CRASHER_MAP;
     
     /* start instrumentation*/
     BPatch bpatch;
+
+    // mapping address
+    if (isOracle){
+        BPatch::bpatch->setMappingFilePath(oracle_map.c_str());
+    }
+    else if (isCrasher){
+        BPatch::bpatch->setMappingFilePath(crasher_map.c_str());
+    }
+    else{
+        BPatch::bpatch->setMappingFilePath("/dev/null");
+    }
+
     
-    // skip all libraries unless -l is set
+    
     BPatch_binaryEdit *appBin = bpatch.openBinary (originalBinary, false);
     if (appBin == NULL) {
         cerr << "Failed to open binary" << endl;
@@ -997,7 +1163,7 @@ int main (int argc, char **argv){
             char funcName[1024];
             countFunc->getName (funcName, 1024);
             
-            //if(isSkipFuncs(funcName)) continue;
+            if(isSkipFuncs(funcName)) continue;
             //count edges
             if(!count_edges(appBin, appImage, countIter, funcName, out_dir)) 
                                 cout << "Empty function" << funcName << endl;      
@@ -1023,7 +1189,7 @@ int main (int argc, char **argv){
         //TODO: fuzzer gets the values through pipe (or shared memory?)?
         return EXIT_SUCCESS; 
    }
-   
+
    // read address-ids from files
     if(!readAddrs(out_dir)) {
         cout << "Fail to read addresses." << endl;
@@ -1046,30 +1212,33 @@ int main (int argc, char **argv){
 
         char funcName[1024];
         curFunc->getName (funcName, 1024);
-        //if(isSkipFuncs(funcName)) continue;
+        if(isSkipFuncs(funcName)) continue;
         //instrument at edges
         if (!edgeInstrument(appBin, appImage, funcIter, funcName, out_dir)) {
             cout << "fail to instrument function: " << funcName << endl;
             // return EXIT_FAILURE;
-            }
+        }
 
     }
 
     BPatch_function *funcToPatch = NULL;
     BPatch_Vector<BPatch_function*> funcs;
     
-    appImage->findFunction("_start",funcs);  // "main"
+    appImage->findFunction("main",funcs);  // "_start"
     if(!funcs.size()) {
-        cerr << "Couldn't locate _start, check your binary. "<< endl;
+        cerr << "Couldn't locate main, check your binary. "<< endl;
         return EXIT_FAILURE;
     }
     // there should really be only one
     funcToPatch = funcs[0];
 
+    
     if(!insertForkServer (appBin, initAflForkServer, funcToPatch, num_predtm, indi_addr_id_file)){
-        cerr << "Could not insert init callback at _start." << endl;
+        cerr << "Could not insert init callback at main." << endl;
         return EXIT_FAILURE;
     }
+    
+    
 
     if(verbose){
         cout << "Saving the instrumented binary to " << instrumentedBinary << "..." << endl;
@@ -1079,6 +1248,21 @@ int main (int argc, char **argv){
         cerr << "Failed to write output file: " << instrumentedBinary << endl;
         return EXIT_FAILURE;
     }
+
+    sleep(1);
+    if (isOracle || isCrasher){
+        
+        fs::path tmp_map;
+        if (isOracle) tmp_map = oracle_map;
+        else if (isCrasher) tmp_map = crasher_map;
+
+        if (!writeInstAddr(out_dir, tmp_map)) {
+            cerr << "Failed to write mapping file: " << endl;
+            return EXIT_FAILURE;
+        }
+
+    }    
+    
 
     if(verbose){
         cout << "All done! Happy fuzzing!" << endl;
