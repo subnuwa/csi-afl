@@ -1,10 +1,3 @@
-/* TODO
-    1. setup_instruments_ids();
-    2. setup_args(): mkdir CSI
-    3. setup_args(): "%s/../CSI" --> "%s/CSI"
-
-*/
-
 
 /*
    american fuzzy lop - fuzzer code
@@ -86,7 +79,14 @@
 #  define R(x) (random() % (x))
 #endif /* ^AFL_LLVM_PASS */
 
-/* ---------------CSI-AFL vars*/
+/* ---------------CSI-AFL vars */
+
+/* shell
+    1. setup_instruments_ids();
+    2. setup_args(): mkdir CSI
+    3. setup_args(): "%s/../CSI" --> "%s/CSI"
+*/
+
 
 EXP_ST u8 *csi_basedir,           /* output of binary analysis */
           *oracle_mapping_path,        /* instrument mapping for oracle */
@@ -94,7 +94,7 @@ EXP_ST u8 *csi_basedir,           /* output of binary analysis */
           *trimmer_path, /* path to trimmer binary */
           *crasher_path;    /* path to crasher binary*/
 
-char ** trimmer_argv; //rosen
+char ** trimmer_argv;
 char ** crasher_argv;
 
 EXP_ST s32 trimmer_fsrv_ctlFD,         /* Forkserver control pipes         */
@@ -106,14 +106,10 @@ EXP_ST s32 trimmer_fsrv_ctlFD,         /* Forkserver control pipes         */
            crasher_fsrv_PID,           /* Forkserver PIDs                  */
            crasher_child_PID;          /* Forkserver child PIDs            */
 
-
-//*pexit_code,          /* record the exit code; in case the target program fork() a new child */
-          //*pflag_loop,          /* contain a loop? 0: not; 1: yes */
 EXP_ST u8  *flag_bits;           /* SHM with flags about whether an edge has been examined */
                               
 EXP_ST u32 total_fork_crash = 0;    /* number of crashes caused by instrumenting at fork() */
-//EXP_ST u8* pcksum_path;     /* data for path checksum as an id */
-// EXP_ST u8 restart_crasher = 0;     /*restart crasher?*/
+
 
 EXP_ST int oracle_inst_begin[MAP_SIZE],    /* oracle oracle_inst_begin[edge_id] = inst_begin_addr */
               oracle_inst_end[MAP_SIZE],    /* oracle oracle_inst_end[edge_id] = inst_end_addr */
@@ -458,8 +454,6 @@ void copy_file(char* src_path, char* dst_path){
 }
 
 
-
-
 static void setup_args(int argc, char ** argv){  
 
   /* Set up relevant binary paths and arg arrays. */
@@ -467,21 +461,21 @@ static void setup_args(int argc, char ** argv){
   // assign memories for pointer
   oracle_argv = malloc((argc-optind+1) * sizeof(target_argv));//sizeof(pointer)
   tracer_argv = malloc((argc-optind+1) * sizeof(target_argv));
-  trimmer_argv = malloc((argc-optind+1) * sizeof(target_argv)); //rosen
+  trimmer_argv = malloc((argc-optind+1) * sizeof(target_argv));
   crasher_argv = malloc((argc-optind+1) * sizeof(target_argv));
-  //CSI dir -- use shell to build it. rosen
-  // u8* tmp = alloc_printf("%s/CSI", out_dir);
-  // if (mkdir(tmp, 0700)) PFATAL("Unable to create '%s'", tmp);
-  // ck_free(tmp);
-
-  csi_basedir = alloc_printf("%s/../CSI", out_dir);
-  oracle_path = alloc_printf("%s/../CSI/%s.oracle", out_dir, basename(target_path));
-  tracer_path = alloc_printf("%s/../CSI/%s.tracer", out_dir, basename(target_path));
-  crasher_path = alloc_printf("%s/../CSI/%s.crasher", out_dir, basename(target_path));
-  trimmer_path = alloc_printf("%s/../CSI/%s.trimmer", out_dir, basename(target_path));//rosen
+  // CSI dir -- don't build dir when using shell
+  u8* tmp = alloc_printf("%s/CSI", out_dir);
+  if (mkdir(tmp, 0700)) PFATAL("Unable to create '%s'", tmp);
+  ck_free(tmp);
+  // for shell: "%s/../CSI" --> "%s/CSI"
+  csi_basedir = alloc_printf("%s/CSI", out_dir);
+  oracle_path = alloc_printf("%s/CSI/%s.oracle", out_dir, basename(target_path));
+  tracer_path = alloc_printf("%s/CSI/%s.tracer", out_dir, basename(target_path));
+  crasher_path = alloc_printf("%s/CSI/%s.crasher", out_dir, basename(target_path));
+  trimmer_path = alloc_printf("%s/CSI/%s.trimmer", out_dir, basename(target_path));
   // for skipping instrumentation
-  oracle_mapping_path = alloc_printf("%s/../CSI/%s", out_dir, ORACLE_EDGES_MAP);
-  crasher_mapping_path = alloc_printf("%s/../CSI/%s", out_dir, CRASHER_EDGES_MAP);
+  oracle_mapping_path = alloc_printf("%s/CSI/%s", out_dir, ORACLE_EDGES_MAP);
+  crasher_mapping_path = alloc_printf("%s/CSI/%s", out_dir, CRASHER_EDGES_MAP);
 
   /* If present, replace "@@" with out_file. */
   /* TODO? - tcaseFD STDIN configuration. */
@@ -499,13 +493,13 @@ static void setup_args(int argc, char ** argv){
   /* Set argument target copy paths and NULL terminators. */
   oracle_argv[0] = oracle_path;
   tracer_argv[0] = tracer_path;
-  trimmer_argv[0] = trimmer_path;//rosen
+  trimmer_argv[0] = trimmer_path;
   crasher_argv[0]= crasher_path;
 
   oracle_argv[argc-optind] = NULL;
   tracer_argv[argc-optind] = NULL;
-  trimmer_argv[argc-optind] = NULL;//rosen
-  crasher_argv[argc-optind] = NULL;//rosen
+  trimmer_argv[argc-optind] = NULL;
+  crasher_argv[argc-optind] = NULL;
 
   return;
 }
@@ -547,30 +541,8 @@ void setup_instruments_ids(){
   OKF("Successfully set up Crasher!");
 
 
-  return;
 }
 
-// void get_inst_addrs(u8* mapping_path, int inst_begin[], int inst_end[]){
-//   char *tmp, *tmp_left;
-//   char buff[256];
-//   // oracle
-//   FILE * inst_file = fopen(mapping_path, "r");
-//   while (fgets(buff, sizeof(buff), inst_file)){
-//     tmp = strtok_r (buff, ",", &tmp_left);
-//     int id = atoi(tmp);
-
-//     tmp = strtok_r (NULL, ",", &tmp_left);
-//     int inst_begin_addr = atoi(tmp);
-
-//     tmp = strtok_r (NULL, ",", &tmp_left);
-//     int inst_end_addr = atoi(tmp);
-
-//     inst_begin[id] = inst_begin_addr;
-//     inst_end[id] = inst_end_addr;
-//   }
-
-//   fclose(inst_file);
-// }
 
 /* get id--inst_addrs for jump over instrumentation */
 void setup_inst_addrs(){
@@ -1725,11 +1697,6 @@ EXP_ST void setup_shm(void) {
 
   //shm_id = shmget(IPC_PRIVATE, MAP_SIZE, IPC_CREAT | IPC_EXCL | 0600);
 
-  /* 0 ~ MAP_SIZE - 1: bitmap
-    MAP_SIZE ~ 2*MAP_SIZE - 1 : flag about whether an edge has been examined through all fuzzing time;
-                                in case the mappings from dyninst miss some edges
-    2*MAP_SIZE ~ 2*MAP_SIZE + 3: cksum of path id calculated from marks
-   */
   shm_id = shmget(IPC_PRIVATE, MAP_SIZE + BYTES_FLAGS + FLAG_LOOP + BYTE_EXIT, IPC_CREAT | IPC_EXCL | 0600);
 
   if (shm_id < 0) PFATAL("shmget() failed");
@@ -1751,7 +1718,7 @@ EXP_ST void setup_shm(void) {
   
   if (!trace_bits) PFATAL("shmat() failed");
 
-  /* setup flag_bits for mimicing re-instrument;  rosen*/
+  /* setup flag_bits */
   flag_bits = trace_bits + MAP_SIZE;
   memset(flag_bits, 255, BYTES_FLAGS);
 
@@ -2411,7 +2378,7 @@ static u8 run_target(s32 * child_PID, s32 * fsrv_ctlFD, s32 * fsrv_stFD, u32 tim
   }
 
   /* the child process is not stopped */
-  if (!WIFSTOPPED(status)) //rosen - status of process NO.3
+  if (!WIFSTOPPED(status)) //status of process NO.3
     *child_PID = 0;
 
   /* Deactivate timer. */
@@ -2568,7 +2535,7 @@ static u8 calibrate_case(struct queue_entry* q, u8* use_mem, u32 handicap, u8 fr
   start_us = get_cur_time_us();
 
   // use the same  (no re-start) to calibrate
-  start_forkserver(&trimmer_fsrv_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD, FORKSRV_FD, trimmer_argv); //rosen
+  start_forkserver(&trimmer_fsrv_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD, FORKSRV_FD, trimmer_argv); 
   for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
 
     u32 cksum;
@@ -2576,7 +2543,7 @@ static u8 calibrate_case(struct queue_entry* q, u8* use_mem, u32 handicap, u8 fr
     if (!first_run && !(stage_cur % stats_update_freq)) show_stats();
 
     write_to_testcase(use_mem, q->len);
-    fault = run_target(&trimmer_child_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD, use_tmout); //rosen
+    fault = run_target(&trimmer_child_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD, use_tmout); 
 
     calib_execs++;
 
@@ -2675,7 +2642,7 @@ abort_calibration:
   stage_max  = old_sm;
 
   if (!first_run) show_stats();
-  stop_forkserver(&trimmer_fsrv_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD); //rosen
+  stop_forkserver(&trimmer_fsrv_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD);
 
   return fault;
 
@@ -2892,7 +2859,7 @@ void init_path_marks(){
       if (fault == FAULT_COND || fault ==FAULT_INDIRECT || (oracleExitCode == COND_COVERAGE) || (oracleExitCode == INDIRECT_COVERAGE)){
         
         // trace_bits from oracle
-        q->path_cksum = hash32(trace_bits,MAP_SIZE, HASH_CONST);
+        q->path_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
         // traverse all examined edges along the path
         write_to_testcase(use_mem, q->len);
         start_forkserver(&tracer_fsrv_PID, &tracer_fsrv_ctlFD, &tracer_fsrv_stFD, FORKSRV_FD, tracer_argv); 
@@ -2905,7 +2872,7 @@ void init_path_marks(){
         total_queued++;
         // update coverage information in oracle
         stop_forkserver(&oracle_fsrv_PID, &oracle_fsrv_ctlFD, &oracle_fsrv_stFD);
-        jump_inst(oracle_path, oracle_inst_begin, oracle_inst_end, 1);  //rosen
+        jump_inst(oracle_path, oracle_inst_begin, oracle_inst_end, 1);
         start_forkserver(&oracle_fsrv_PID, &oracle_fsrv_ctlFD, &oracle_fsrv_stFD, FORKSRV_FD, oracle_argv);
 
         
@@ -3320,7 +3287,7 @@ static u8 save_if_interesting(void* mem, u32 len, u8 fault) {
     queued_with_bits++;
 
     
-    queue_top->exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST); //rosen
+    queue_top->exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST); 
     queue_top->is_loop = trace_bits[MAP_SIZE + BYTES_FLAGS];
     //path cksum
     queue_top->path_cksum = tmp_pathcksum;
@@ -3504,7 +3471,6 @@ static void find_timeout(void) {
 
 
 /* Update stats file for unattended monitoring. */
-//rosen
 static void write_stats_file(double bitmap_cvg, double stability, double eps) {
 
   static double last_bcvg, last_stab, last_eps;
@@ -4388,7 +4354,6 @@ static void show_stats(void) {
   sprintf(tmp, "%s (%0.02f%%)", DI(trim_execs), ((double)trim_execs) * 100 / total_execs);
   SAYF(bSTOP "      trim execs  : " cRST "%-21s " bSTG bV "\n", tmp);
 
-  //rosen
   SAYF(bVR bH cLBL bSTOP "  CSI stats  " bSTG bH10
        bH10 bH2 bH2 bSTOP cLBL " queueing info " bSTG bH20 bH5 bVL "\n");
 
@@ -4712,7 +4677,7 @@ static u8 trim_case(struct queue_entry* q, u8* in_buf) {
   /* Continue until the number of steps gets too high or the stepover
      gets too small. */
     
-  start_forkserver(&trimmer_fsrv_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD, FORKSRV_FD, trimmer_argv); //rosen
+  start_forkserver(&trimmer_fsrv_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD, FORKSRV_FD, trimmer_argv);
   
   while (remove_len >= MAX(len_p2 / TRIM_END_STEPS, TRIM_MIN_BYTES)) {
 
@@ -4726,25 +4691,25 @@ static u8 trim_case(struct queue_entry* q, u8* in_buf) {
     while (remove_pos < q->len) {
 
       u32 trim_avail = MIN(remove_len, q->len - remove_pos);
-      u32 cksum; //rosen
+      u32 cksum; 
 
       write_with_gap(in_buf, q->len, remove_pos, trim_avail);
 
-      fault = run_target(&trimmer_child_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD, exec_tmout); //rosen
+      fault = run_target(&trimmer_child_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD, exec_tmout); 
       trim_execs++;
 
       if (stop_soon || fault == FAULT_ERROR) goto abort_trimming;
 
       /* Note that we don't keep track of crashes or hangs here; maybe TODO? */
 
-      cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST); //rosen
+      cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST); 
 
       /* If the deletion had no impact on the trace, make it permanent. This
          isn't perfect for variable-path inputs, but we're just making a
          best-effort pass, so it's not a big deal if we end up with false
          negatives every now and then. */
 
-      if (cksum == q->exec_cksum) { //rosen
+      if (cksum == q->exec_cksum) { 
         u32 move_tail = q->len - remove_pos - trim_avail;
 
         q->len -= trim_avail;
@@ -4802,7 +4767,7 @@ abort_trimming:
 
   bytes_trim_out += q->len;
 
-  stop_forkserver(&trimmer_fsrv_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD);//rosen
+  stop_forkserver(&trimmer_fsrv_PID, &trimmer_fsrv_ctlFD, &trimmer_fsrv_stFD);
   return fault;
 
 }
@@ -5257,7 +5222,6 @@ static u8 fuzz_one() {
   if (queue_cur->cal_failed) {
 
     u8 res = FAULT_TMOUT;
-    //remove_recorded_addrs(tracer_addr_dir);//rosen
     
     if (queue_cur->cal_failed < CAL_CHANCES) {
 
@@ -5340,7 +5304,7 @@ static u8 fuzz_one() {
 
   orig_hit_cnt = queued_paths + unique_crashes;
 
-  //prev_cksum = queue_cur->path_cksum; //rosen
+  
   prev_cksum = queue_cur->exec_cksum;
 
   for (stage_cur = 0; stage_cur < stage_max; stage_cur++) {
@@ -7908,12 +7872,13 @@ int main(int argc, char** argv) {
 
   check_binary(argv[optind]); 
 
-  setup_args(argc, argv); //rosen
+  setup_args(argc, argv); 
 
-  // ACTF("Setting up instrumentation...");
-  // setup_instruments_ids();
-  // if (stop_soon) goto stop_fuzzing;
-  // OKF("Successfully set up instrumentation!");
+  // if shell, don't call setup_instruments_ids()
+  ACTF("Setting up instrumentation...");
+  setup_instruments_ids();
+  if (stop_soon) goto stop_fuzzing;
+  OKF("Successfully set up instrumentation!");
 
   setup_inst_addrs();
   
@@ -8037,12 +8002,18 @@ stop_fuzzing:
   destroy_extras();
   ck_free(target_path);
   ck_free(sync_id);
+  ck_free(csi_basedir);
   ck_free(tracer_path);
   ck_free(oracle_path);
-  ck_free(trimmer_path);//rosen
+  ck_free(trimmer_path);
   ck_free(crasher_path);
   ck_free(crasher_mapping_path);
   ck_free(oracle_mapping_path);
+
+  free(oracle_argv);
+  free(tracer_argv);
+  free(trimmer_argv);
+  free(crasher_argv);
 
   alloc_report();
 

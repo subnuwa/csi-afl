@@ -102,21 +102,6 @@ make clean && make all
 Fuzzing the target binary.
 
 ```
-###./csi-afl -i /path/to/seeds -o /path/to/output -t 500 -- /path/to/target/binary [params]
-./instCSIAFL.sh $out $seeds $target_bin $fuzz_time $dict $timeout $param
-./runCSIAFL.sh $out $seeds $target_bin $fuzz_time $dict $timeout $param
+./csi-afl -i /path/to/seeds -o /path/to/output -t 500 -- /path/to/target/binary [params]
 ```
 
-    $out: output folder
-    $seeds: seed folder
-    $target_bin: the target binary
-    $fuzz_time: fuzzing time
-    $dict: "nodict" or path to dictionary
-    $timeout: time out
-    $param: parameters for target binary
-
-
-```
-./instCSIAFL.sh ../../outputs/csinm ../../target-bins/nm/seed_dir/ ../../target-bins/nm/nm 10 "nodict" 500 -n @@
-./runCSIAFL.sh ../../outputs/csinm ../../target-bins/nm/seed_dir/ ../../target-bins/nm/nm 10 "nodict" 500 -n @@
-```
