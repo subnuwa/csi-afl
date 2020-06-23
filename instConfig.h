@@ -1,38 +1,45 @@
 
-#define COND_NOT_TAKEN "CondNotTaken.bin"
-#define COND_TAKEN "CondTaken.bin"
-#define INDIRECT_CALL "indirectCall.bin"
-#define INDIRECT_JUMP "indirectJump.bin"
+#define NUM_EDGE_FILE "num_edges.txt"
 
-#define ONE_ADDR "oneAddr.bin"
-// for path marks
-#define MARK_COND_NOT_TAKEN "MARKCondNotTaken.bin"
-#define MARK_COND_TAKEN "MARKCondTaken.bin"
-#define MARK_INDIRECT_CALL "MARKindirectCall.bin"
-#define MARK_INDIRECT_JUMP "MARKindirectJump.bin"
+#define COND_ADDR_ID "cond_addr_ids.txt"
+#define COND_NOT_ADDR_ID "cond_not_addr_id.txt"
+#define NO_JUMP_ADDR_ID "no_jump_addr_id.txt"
+#define UNCOND_JUMP_ADDR_ID "uncond_jump_addr_id.txt"
 
-#define MARK_SIZE 8 //size of unsigned long
+#define INDIRECT_ADDR_ID    "indirect_addr_ids.txt"
 
-// #define TYPE_CTAKEN 1  //condition branch taken
-// #define TYPE_NCTAKEN 2  //condition branch not taken
-// #define TYPE_CALL 3  //indirect call
-// #define TYPE_JUMP 4  //indirect jump
+//mark file for pre-determined edges
+#define PATH_MARKS      "path_marks.txt"
+// mark file for indirect edges
+//#define INDIRECT_MARKS "indirect_marks.txt"
 
-enum branType{
-/*00*/ TYPE_CTAKEN,  //condition branch taken
-/*01*/ TYPE_NCTAKEN,  //condition branch not taken
-/*02*/ TYPE_CALL,  //indirect call
-/*03*/ TYPE_JUMP  //indirect jump
-};
+//#define SKIP_BLOCKS     "skip_blocks.txt"
+
+#define BASE_INDIRECT   3
+// //bytes for checksum for path id
+// #define SIZE_CKSUM_PATH         (1 << 7)
+// #define BYTES_CKSUM_PATH        (4 * SIZE_CKSUM_PATH)
+
+//byte for recording the flags of loops
+#define FLAG_LOOP   1
+
+// byte for record exit code COND_COVERAGE or INDIRECT_COVERAGE
+#define BYTE_EXIT       1
+
+// give loops more air time
+#define LOOP_TIME   8
+
 
 #define COND_COVERAGE 66 //exit(COND_COVERAGE), conditional jump
 #define INDIRECT_COVERAGE 67  //indirect jump/call
 
 
-enum Category {
-    /*00*/ BIN_NONE,
-    /*01*/ BIN_CRASH,  //instrument crash binary
-    /*02*/ BIN_TRACER,  //instrument tracer binary
-    /*03*/ BIN_ORACLE,  // instrument oracle binary
-    /*04*/ BIN_TRIMMER  // instrument trimmer binary
-};
+// for remove exit(); the mapping
+#define ORACLE_MAP      "oracle_map_addr.txt"
+#define CRASHER_MAP     "crasher_map_addr.txt"
+#define ORACLE_EDGES_MAP        "oracle_edges_mapping.txt"
+#define CRASHER_EDGES_MAP        "crasher_edges_mapping.txt"
+
+#define EDGE_COVERED    1
+#define EDGE_MARK       2
+#define EDGE_CRASH      4
