@@ -2,7 +2,7 @@
 # CSI-AFL - makefile
 # -----------------------------
 #
-# Written by Xiaogang Zhu <xiaogangzhu@swin.edu.au>
+# Written by Xiaogang Zhu
 #
 # Based on AFL (american fuzzy lop) by Michal Zalewski <lcamtuf@google.com>
 # 
