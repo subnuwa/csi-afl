@@ -21,7 +21,7 @@
 
 # var- edit DYN_ROOT accordingly
 
-DYN_ROOT 	= /home/xgzhu/apps/dyninstShadow/thirdparty/dyninst-10.1.0/install
+DYN_ROOT 	= /path/to/dyninst-10.1.0/install
 # These should point to where libelf and libdwarf are installed
 # LOCAL_INC = /usr/local/include
 # LOCAL_LIBS = /usr/local/lib
